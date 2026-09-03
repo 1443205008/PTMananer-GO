@@ -41,6 +41,9 @@ func TriggerAllHandler(pool *sql.DB, queue *Queue) gin.HandlerFunc {
 				jobIDs = append(jobIDs, jid)
 			}
 		}
+		if err := rows.Err(); err != nil {
+			return
+		}
 		if jobIDs == nil {
 			jobIDs = []string{}
 		}

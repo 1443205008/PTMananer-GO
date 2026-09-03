@@ -11,7 +11,6 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/config"
 	"github.com/1443205008/ptmanager-go/internal/cryptoutil"
 	"github.com/1443205008/ptmanager-go/internal/domain"
-
 )
 
 // Provider M-Team TrackerProvider 实现。
@@ -61,7 +60,7 @@ func (p *Provider) connErr(err error, latencyMs int64) domain.ConnectionResult {
 	return domain.ConnectionResult{
 		Success:   false,
 		LatencyMs: latencyMs,
-		Error: &domain.TrackerErrorInfo{Code: code, Message: msg},
+		Error:     &domain.TrackerErrorInfo{Code: code, Message: msg},
 	}
 }
 
@@ -308,10 +307,10 @@ func (p *Provider) fetchBonusHourlyRate(apiKey string, uid int) *float64 {
 func (p *Provider) fetchTorrentCount(apiKey string, uid int, queryType string) int {
 	var result PageResult
 	body := map[string]interface{}{
-		"userid":    uid,
-		"type":      queryType,
+		"userid":     uid,
+		"type":       queryType,
 		"pageNumber": 1,
-		"pageSize":  1,
+		"pageSize":   1,
 	}
 	if err := p.client.Request(EndpointMemberTorrentList, apiKey, body, &result, p.client.maxRetries); err != nil {
 		log.Printf("[mteam] fetchTorrentCount(%s) failed: %v → 0", queryType, err)
@@ -370,8 +369,7 @@ func (p *Provider) fetchAllTorrents(accountID, queryType string) ([]domain.Track
 
 func (p *Provider) getDecryptedAPIKey(accountID string) (string, error) {
 	var enc, iv, tag string
-	err := p.pool.QueryRow(`SELECT encryptedApiKey, iv, authTag FROM TrackerCredential WHERE accountId=?`, accountID,
-	).Scan(&enc, &iv, &tag)
+	err := p.pool.QueryRow(`SELECT encryptedApiKey, iv, authTag FROM TrackerCredential WHERE accountId=?`, accountID).Scan(&enc, &iv, &tag)
 	if err != nil {
 		return "", fmt.Errorf("credential not found for account %s: %w", accountID, err)
 	}

@@ -2,9 +2,9 @@
 package search
 
 import (
-	"log"
-	"database/sql"
 	"context"
+	"database/sql"
+	"log"
 	"net/http"
 	"sort"
 	"strconv"
@@ -116,6 +116,9 @@ func (s *Service) SearchTorrents(keyword string, page, pageSize int, mode, disco
 			_ = rows.Scan(&id)
 			seeding[id] = true
 		}
+		if err := rows.Err(); err != nil {
+			return SearchResponse{}, err
+		}
 	}
 
 	var rawItems []mteam.SearchTorrentItem
@@ -145,7 +148,7 @@ func (s *Service) SearchTorrents(keyword string, page, pageSize int, mode, disco
 	}
 	return SearchResponse{
 		Data: items, Total: total,
-		Page: atoiDefault(result.PageNumber.String(), 1),
+		Page:     atoiDefault(result.PageNumber.String(), 1),
 		PageSize: atoiDefault(result.PageSize.String(), pageSize),
 	}, nil
 }

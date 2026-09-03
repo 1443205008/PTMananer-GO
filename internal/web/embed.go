@@ -31,7 +31,7 @@ func Register(r *gin.Engine, apiPrefix string) {
 		p := strings.TrimPrefix(c.Request.URL.Path, "/")
 		p = strings.TrimSuffix(p, "/")
 
-		// 依次尝试：精确路径 → path.html → path/index.html → /index.html (SPA fallback)
+		// 依次尝试：精确路径 → path.html（Next 导出布局）；SPA fallback → index.html
 		candidates := []string{p, p + ".html"}
 		if p == "" {
 			candidates = []string{"index.html"}
@@ -62,8 +62,14 @@ func serveFile(c *gin.Context, sub fs.FS, name string) {
 		c.Status(http.StatusNotFound)
 		return
 	}
- ctype := mimeByExt(name)
+	ctype := mimeByExt(name)
 	c.Header("Content-Type", ctype)
+	// 带内容 hash 的 _next 静态资源长缓存；HTML 不缓存
+	if strings.HasPrefix(name, "_next/static/") {
+		c.Header("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		c.Header("Cache-Control", "no-cache")
+	}
 	c.Data(http.StatusOK, ctype, data)
 }
 

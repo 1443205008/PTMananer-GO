@@ -22,32 +22,32 @@ func NewService(pool *sql.DB, acc *accounts.Service) *Service {
 }
 
 type Summary struct {
-	AccountCount    int     `json:"accountCount"`
-	SiteCount        int     `json:"siteCount"`
-	ActiveCount      int     `json:"activeCount"`
-	ProblemCount     int     `json:"problemCount"`
-	TotalUploadBytes string  `json:"totalUploadBytes"`
-	TotalDownloadBytes string `json:"totalDownloadBytes"`
-	OverallRatio     float64 `json:"overallRatio"`
-	TotalBonus       float64 `json:"totalBonus"`
-	TotalSeedingCount int    `json:"totalSeedingCount"`
-	TotalSeedingBytes string  `json:"totalSeedingBytes"`
-	TotalHitAndRun   int     `json:"totalHitAndRun"`
-	LastSyncAt       *string `json:"lastSyncAt"`
+	AccountCount       int     `json:"accountCount"`
+	SiteCount          int     `json:"siteCount"`
+	ActiveCount        int     `json:"activeCount"`
+	ProblemCount       int     `json:"problemCount"`
+	TotalUploadBytes   string  `json:"totalUploadBytes"`
+	TotalDownloadBytes string  `json:"totalDownloadBytes"`
+	OverallRatio       float64 `json:"overallRatio"`
+	TotalBonus         float64 `json:"totalBonus"`
+	TotalSeedingCount  int     `json:"totalSeedingCount"`
+	TotalSeedingBytes  string  `json:"totalSeedingBytes"`
+	TotalHitAndRun     int     `json:"totalHitAndRun"`
+	LastSyncAt         *string `json:"lastSyncAt"`
 }
 
 type TrendPoint struct {
-	Date          string `json:"date"`
-	UploadBytes   string `json:"uploadBytes"`
-	DownloadBytes string `json:"downloadBytes"`
+	Date          string  `json:"date"`
+	UploadBytes   string  `json:"uploadBytes"`
+	DownloadBytes string  `json:"downloadBytes"`
 	Bonus         float64 `json:"bonus"`
-	SeedingCount  int    `json:"seedingCount"`
+	SeedingCount  int     `json:"seedingCount"`
 }
 
 type Dashboard struct {
-	Summary  Summary               `json:"summary"`
+	Summary  Summary                    `json:"summary"`
 	Accounts []accounts.AccountResponse `json:"accounts"`
-	Trend    []TrendPoint          `json:"trend"`
+	Trend    []TrendPoint               `json:"trend"`
 }
 
 func (s *Service) Get(trendDays int) (Dashboard, error) {
@@ -155,12 +155,15 @@ func (s *Service) buildTrend(days int) ([]TrendPoint, error) {
 			return nil, err
 		}
 		out = append(out, TrendPoint{
-			Date: d.Format("2006-01-02"),
-			UploadBytes: strconv.FormatInt(up, 10),
+			Date:          d.Format("2006-01-02"),
+			UploadBytes:   strconv.FormatInt(up, 10),
 			DownloadBytes: strconv.FormatInt(down, 10),
-			Bonus: bonus,
-			SeedingCount: seeding,
+			Bonus:         bonus,
+			SeedingCount:  seeding,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if out == nil {
 		out = []TrendPoint{}

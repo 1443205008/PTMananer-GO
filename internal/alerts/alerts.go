@@ -2,12 +2,10 @@
 package alerts
 
 import (
-	"log"
 	"database/sql"
+	"log"
 	"net/http"
 	"time"
-
-	"github.com/1443205008/ptmanager-go/internal/db"
 
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +51,8 @@ func (s *Service) FindAll(unreadOnly bool) ([]AlertResponse, error) {
 	if unreadOnly {
 		q += " AND al.isRead=FALSE"
 	}
-	q += " ORDER BY al.severity DESC, al.createdAt DESC LIMIT 200"
+	// 对齐 TS 版 PG enum 顺序：CRITICAL > ERROR > WARNING > INFO（字典序会 WARNING 前置，错的）
+	q += " ORDER BY FIELD(al.severity,'CRITICAL','ERROR','WARNING','INFO'), al.createdAt DESC LIMIT 200"
 	rows, err := s.pool.Query(q)
 	if err != nil {
 		return nil, err
@@ -71,6 +70,9 @@ func scanAlerts(rows *sql.Rows) ([]AlertResponse, error) {
 			return nil, err
 		}
 		out = append(out, r.toResponse())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	if out == nil {
 		out = []AlertResponse{}
@@ -195,6 +197,3 @@ func DismissHandler(svc *Service) gin.HandlerFunc {
 		c.Status(http.StatusNoContent)
 	}
 }
-
-var _ = db.NewID
-var _ = time.Now

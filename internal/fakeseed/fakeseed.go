@@ -3,15 +3,15 @@
 package fakeseed
 
 import (
-	"log"
-	"database/sql"
 	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha1"
+	"database/sql"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -71,14 +71,14 @@ type jobScan struct {
 
 type jobRow struct {
 	id, accountID, torrentID, torrentName, infoHash, trackerURL string
-	totalSize int64
-	peerID, peerKey string
-	port, interval int
-	status string
-	lastReportAt, nextReportAt *time.Time
-	errorMessage *string
-	createdAt *time.Time
-	accountName, siteCode, siteName *string
+	totalSize                                                   int64
+	peerID, peerKey                                             string
+	port, interval                                              int
+	status                                                      string
+	lastReportAt, nextReportAt                                  *time.Time
+	errorMessage                                                *string
+	createdAt                                                   *time.Time
+	accountName, siteCode, siteName                             *string
 }
 
 const jobSelect = `
@@ -235,7 +235,18 @@ func (s *Service) downloadTorrentFile(ctx context.Context, accountID, torrentID 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("下载种子失败：HTTP %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20)) // 防超大文件
+	if err != nil {
+		return nil, err
+	}
+	// bencode 快速预检：合法 torrent 必以 'd' 开头
+	if len(body) == 0 || body[0] != 'd' {
+		return nil, fmt.Errorf("响应不是有效的 torrent 文件")
+	}
+	return body, nil
 }
 
 // ─── bencode 解析（对齐 TS 版手写解析器语义）────────────────────────────
@@ -465,7 +476,14 @@ func (s *Service) sendAnnounce(job *jobRow, event string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+
+	// tracker 拒绝（bencode failure reason）：b"d14:failure reason..."
+	if idx := bytes.Index(body, []byte("failure reason")); idx != -1 {
+		reasonEnd := bytes.IndexByte(body[idx:], 'e')
+		msg := string(body[idx : idx+reasonEnd])
+		return fmt.Errorf("tracker 拒绝：%s", msg)
+	}
 
 	if newInterval, ok := parseTrackerInterval(body); ok {
 		if _, err := s.pool.Exec(`UPDATE FakeSeedJob SET interval=?, updatedAt=NOW() WHERE id=?`, newInterval, job.id); err == nil {
@@ -600,6 +618,9 @@ func (s *Service) List(accountID string) ([]FakeSeedJobResponse, error) {
 		}
 		out = append(out, r.toResponse())
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	if out == nil {
 		out = []FakeSeedJobResponse{}
 	}
@@ -619,6 +640,9 @@ func RestoreRunning(pool *sql.DB, svc *Service) {
 		var id string
 		_ = rows.Scan(&id)
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return
 	}
 	if len(ids) == 0 {
 		return

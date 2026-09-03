@@ -15,29 +15,29 @@ type Service struct{ pool *sql.DB }
 func NewService(pool *sql.DB) *Service { return &Service{pool: pool} }
 
 type TorrentResponse struct {
-	ID             string  `json:"id"`
-	AccountID      string  `json:"accountId"`
-	AccountName    string  `json:"accountName"`
-	SiteTorrentID  string  `json:"siteTorrentId"`
-	Name           string  `json:"name"`
-	SizeBytes      string  `json:"sizeBytes"`
-	Status         string  `json:"status"`
-	UploadedBytes  string  `json:"uploadedBytes"`
-	DownloadedBytes string `json:"downloadedBytes"`
-	Ratio          float64 `json:"ratio"`
-	SeedTimeSecs   int     `json:"seedTimeSecs"`
-	LeechTimeSecs  int     `json:"leechTimeSecs"`
-	CompletedAt    *string `json:"completedAt"`
-	LastActivityAt *string `json:"lastActivityAt"`
-	SyncedAt       *string `json:"syncedAt"`
-	CreatedAt      string  `json:"createdAt"`
+	ID              string  `json:"id"`
+	AccountID       string  `json:"accountId"`
+	AccountName     string  `json:"accountName"`
+	SiteTorrentID   string  `json:"siteTorrentId"`
+	Name            string  `json:"name"`
+	SizeBytes       string  `json:"sizeBytes"`
+	Status          string  `json:"status"`
+	UploadedBytes   string  `json:"uploadedBytes"`
+	DownloadedBytes string  `json:"downloadedBytes"`
+	Ratio           float64 `json:"ratio"`
+	SeedTimeSecs    int     `json:"seedTimeSecs"`
+	LeechTimeSecs   int     `json:"leechTimeSecs"`
+	CompletedAt     *string `json:"completedAt"`
+	LastActivityAt  *string `json:"lastActivityAt"`
+	SyncedAt        *string `json:"syncedAt"`
+	CreatedAt       string  `json:"createdAt"`
 }
 
 type ListResponse struct {
-	Data   []TorrentResponse `json:"data"`
-	Total  int               `json:"total"`
-	Page   int               `json:"page"`
-	Limit  int               `json:"limit"`
+	Data  []TorrentResponse `json:"data"`
+	Total int               `json:"total"`
+	Page  int               `json:"page"`
+	Limit int               `json:"limit"`
 }
 
 func (s *Service) FindAll(accountID, status string, page, limit int) (ListResponse, error) {
@@ -96,6 +96,9 @@ func (s *Service) FindAll(accountID, status string, page, limit int) (ListRespon
 		r.SyncedAt = fmtTime(syncedAt)
 		r.CreatedAt = derefTime(createdAt)
 		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return ListResponse{}, err
 	}
 	if out == nil {
 		out = []TorrentResponse{}

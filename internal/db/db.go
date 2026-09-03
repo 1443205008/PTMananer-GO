@@ -51,7 +51,11 @@ func Connect(databaseURL string) (*sql.DB, error) {
 		}
 		dsn = fmt.Sprintf("%s@%s/%s?%s", userPart, host, rest, params)
 	} else if !strings.Contains(dsn, "parseTime") {
-		dsn += "?parseTime=true&loc=UTC"
+		if strings.Contains(dsn, "?") {
+			dsn += "&parseTime=true&loc=UTC"
+		} else {
+			dsn += "?parseTime=true&loc=UTC"
+		}
 	}
 
 	db, err := sql.Open("mysql", dsn)

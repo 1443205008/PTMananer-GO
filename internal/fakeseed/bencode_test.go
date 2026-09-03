@@ -112,7 +112,7 @@ func TestParseTorrentMalformed(t *testing.T) {
 		"empty":           {},
 		"only-info-key":   []byte("4:info"),
 		"nested-list-cut": []byte("d8:announce31:http://t.example/a4:infod5:filesl"),
-		"bad-str-len":    []byte("d8:announce31:http://t.example/a4:infod4:name99:shor"),
+		"bad-str-len":     []byte("d8:announce31:http://t.example/a4:infod4:name99:shor"),
 		"garbage":         []byte("xxxxx"),
 	}
 	for name, data := range cases {

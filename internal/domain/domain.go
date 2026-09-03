@@ -13,21 +13,21 @@ const (
 type AccountStatus string
 
 const (
-	AccountActive             AccountStatus = "ACTIVE"
-	AccountInactive           AccountStatus = "INACTIVE"
-	AccountCredentialInvalid  AccountStatus = "CREDENTIAL_INVALID"
-	AccountSyncError          AccountStatus = "SYNC_ERROR"
+	AccountActive            AccountStatus = "ACTIVE"
+	AccountInactive          AccountStatus = "INACTIVE"
+	AccountCredentialInvalid AccountStatus = "CREDENTIAL_INVALID"
+	AccountSyncError         AccountStatus = "SYNC_ERROR"
 )
 
 // TorrentStatus 种子状态
 type TorrentStatus string
 
 const (
-	TorrentSeeding  TorrentStatus = "SEEDING"
-	TorrentLeeching TorrentStatus = "LEECHING"
+	TorrentSeeding   TorrentStatus = "SEEDING"
+	TorrentLeeching  TorrentStatus = "LEECHING"
 	TorrentCompleted TorrentStatus = "COMPLETED"
-	TorrentStopped  TorrentStatus = "STOPPED"
-	TorrentUnknown  TorrentStatus = "UNKNOWN"
+	TorrentStopped   TorrentStatus = "STOPPED"
+	TorrentUnknown   TorrentStatus = "UNKNOWN"
 )
 
 // SyncJobType 同步任务类型
@@ -77,12 +77,12 @@ const (
 type AlertType string
 
 const (
-	AlertHNDDetected  AlertType = "HNR_DETECTED"
-	AlertAuthFailed    AlertType = "AUTH_FAILED"
-	AlertSyncFailed    AlertType = "SYNC_FAILED"
-	AlertSiteOffline   AlertType = "SITE_OFFLINE"
-	AlertAPIChanged     AlertType = "API_CHANGED"
-	AlertRateLimited    AlertType = "RATE_LIMITED"
+	AlertHNDDetected AlertType = "HNR_DETECTED"
+	AlertAuthFailed  AlertType = "AUTH_FAILED"
+	AlertSyncFailed  AlertType = "SYNC_FAILED"
+	AlertSiteOffline AlertType = "SITE_OFFLINE"
+	AlertAPIChanged  AlertType = "API_CHANGED"
+	AlertRateLimited AlertType = "RATE_LIMITED"
 )
 
 // AlertSeverity 告警级别
@@ -108,15 +108,15 @@ const (
 type TrackerErrorCode string
 
 const (
-	ErrAuthInvalid      TrackerErrorCode = "AUTH_INVALID"
-	ErrAuthExpired      TrackerErrorCode = "AUTH_EXPIRED"
-	ErrRateLimited      TrackerErrorCode = "RATE_LIMITED"
-	ErrSiteOffline      TrackerErrorCode = "SITE_OFFLINE"
-	ErrNetworkError     TrackerErrorCode = "NETWORK_ERROR"
-	ErrTimeout          TrackerErrorCode = "TIMEOUT"
-	ErrAPIChanged       TrackerErrorCode = "API_CHANGED"
-	ErrInvalidResponse  TrackerErrorCode = "INVALID_RESPONSE"
-	ErrUnknown          TrackerErrorCode = "UNKNOWN_ERROR"
+	ErrAuthInvalid     TrackerErrorCode = "AUTH_INVALID"
+	ErrAuthExpired     TrackerErrorCode = "AUTH_EXPIRED"
+	ErrRateLimited     TrackerErrorCode = "RATE_LIMITED"
+	ErrSiteOffline     TrackerErrorCode = "SITE_OFFLINE"
+	ErrNetworkError    TrackerErrorCode = "NETWORK_ERROR"
+	ErrTimeout         TrackerErrorCode = "TIMEOUT"
+	ErrAPIChanged      TrackerErrorCode = "API_CHANGED"
+	ErrInvalidResponse TrackerErrorCode = "INVALID_RESPONSE"
+	ErrUnknown         TrackerErrorCode = "UNKNOWN_ERROR"
 )
 
 // Coder 供跨包错误码提取（MTeamError 等实现此接口）
@@ -173,9 +173,9 @@ func (e *TrackerError) UserMessage() string {
 
 // ConnectionResult 连接测试结果
 type ConnectionResult struct {
-	Success   bool            `json:"success"`
-	LatencyMs int64           `json:"latencyMs,omitempty"`
-	Profile   *MiniProfile    `json:"profile,omitempty"`
+	Success   bool              `json:"success"`
+	LatencyMs int64             `json:"latencyMs,omitempty"`
+	Profile   *MiniProfile      `json:"profile,omitempty"`
 	Error     *TrackerErrorInfo `json:"error,omitempty"`
 }
 
@@ -191,58 +191,58 @@ type TrackerErrorInfo struct {
 
 // TrackerProfile 用户资料
 type TrackerProfile struct {
-	SiteCode        string
-	ExternalUserID  string
-	Username        string
-	Email           string
-	JoinedAt        time.Time
-	RoleID          int
-	LevelName       string
-	AvatarURL       string
-	Title           string
-	IsParked        bool
-	IsEnabled       bool
+	SiteCode       string
+	ExternalUserID string
+	Username       string
+	Email          string
+	JoinedAt       time.Time
+	RoleID         int
+	LevelName      string
+	AvatarURL      string
+	Title          string
+	IsParked       bool
+	IsEnabled      bool
 }
 
 // TrackerStats 当前统计
 type TrackerStats struct {
-	UploadBytes    int64
-	DownloadBytes  int64
-	Ratio          float64 // -1 = 无限
-	Bonus          float64
-	SeedingCount   int
-	SeedingBytes   int64
-	LeechingCount  int
-	HitAndRunCount int
-	IsWarned       bool
-	IsVIP          bool
-	IsDonor        bool
-	LastLoginAt    *time.Time
-	LastTrackerAt  *time.Time
-	SnapshotTime   time.Time
+	UploadBytes     int64
+	DownloadBytes   int64
+	Ratio           float64 // -1 = 无限
+	Bonus           float64
+	SeedingCount    int
+	SeedingBytes    int64
+	LeechingCount   int
+	HitAndRunCount  int
+	IsWarned        bool
+	IsVIP           bool
+	IsDonor         bool
+	LastLoginAt     *time.Time
+	LastTrackerAt   *time.Time
+	SnapshotTime    time.Time
 	BonusHourlyRate *float64
 }
 
 // TrackerTorrent 种子
 type TrackerTorrent struct {
-	SiteTorrentID  string
-	Name           string
-	SizeBytes      int64
-	Status         TorrentStatus
-	UploadedBytes  int64
+	SiteTorrentID   string
+	Name            string
+	SizeBytes       int64
+	Status          TorrentStatus
+	UploadedBytes   int64
 	DownloadedBytes int64
-	Ratio          float64
-	SeedTimeSecs   int
-	LeechTimeSecs  int
-	CompletedAt    *time.Time
-	LastActivityAt *time.Time
+	Ratio           float64
+	SeedTimeSecs    int
+	LeechTimeSecs   int
+	CompletedAt     *time.Time
+	LastActivityAt  *time.Time
 }
 
 // BonusStats 魔力值统计
 type BonusStats struct {
-	Current   float64
+	Current    float64
 	HourlyRate *float64
-	UpdatedAt time.Time
+	UpdatedAt  time.Time
 }
 
 // HitAndRun H&R 记录
@@ -257,7 +257,7 @@ type HitAndRun struct {
 // MessageStats 消息统计
 type MessageStats struct {
 	UnreadCount int
-	CheckedAt    time.Time
+	CheckedAt   time.Time
 }
 
 // TrackerSiteStatusResult 站点健康结果

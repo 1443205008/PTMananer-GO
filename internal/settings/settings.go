@@ -2,9 +2,9 @@
 package settings
 
 import (
-	"log"
-	"database/sql"
 	"context"
+	"database/sql"
+	"log"
 	"net/http"
 	"time"
 
@@ -17,14 +17,14 @@ import (
 
 // Defaults 与 TS 版 SETTINGS_DEFAULTS 一致
 var Defaults = map[string]string{
-	"systemName":          "PT Manager",
-	"timezone":            "Asia/Shanghai",
-	"defaultPageSize":     "20",
-	"syncEnabled":         "true",
-	"syncIntervalMinutes": "30",
-	"alertEnabled":        "true",
-	"alertRetentionDays":  "90",
-	"syncLogRetentionDays": "30",
+	"systemName":            "PT Manager",
+	"timezone":              "Asia/Shanghai",
+	"defaultPageSize":       "20",
+	"syncEnabled":           "true",
+	"syncIntervalMinutes":   "30",
+	"alertEnabled":          "true",
+	"alertRetentionDays":    "90",
+	"syncLogRetentionDays":  "30",
 	"snapshotRetentionDays": "365",
 }
 
@@ -41,17 +41,24 @@ var allowedInts = map[string][]int{
 	"syncIntervalMinutes": {5, 15, 30, 60},
 }
 
+// 范围（对齐 @Min/@Max）
+var intRanges = map[string][2]int{
+	"alertRetentionDays":    {7, 730},
+	"syncLogRetentionDays":  {7, 730},
+	"snapshotRetentionDays": {30, 1095},
+}
+
 type SystemSettings struct {
-	SystemName          string  `json:"systemName"`
-	Timezone            string  `json:"timezone"`
-	DefaultPageSize     int     `json:"defaultPageSize"`
-	SyncEnabled         bool    `json:"syncEnabled"`
-	SyncIntervalMinutes int     `json:"syncIntervalMinutes"`
-	AlertEnabled        bool    `json:"alertEnabled"`
-	AlertRetentionDays  int     `json:"alertRetentionDays"`
-	SyncLogRetentionDays int    `json:"syncLogRetentionDays"`
-	SnapshotRetentionDays int   `json:"snapshotRetentionDays"`
-	UpdatedAt           *string `json:"updatedAt"`
+	SystemName            string  `json:"systemName"`
+	Timezone              string  `json:"timezone"`
+	DefaultPageSize       int     `json:"defaultPageSize"`
+	SyncEnabled           bool    `json:"syncEnabled"`
+	SyncIntervalMinutes   int     `json:"syncIntervalMinutes"`
+	AlertEnabled          bool    `json:"alertEnabled"`
+	AlertRetentionDays    int     `json:"alertRetentionDays"`
+	SyncLogRetentionDays  int     `json:"syncLogRetentionDays"`
+	SnapshotRetentionDays int     `json:"snapshotRetentionDays"`
+	UpdatedAt             *string `json:"updatedAt"`
 }
 
 type Service struct {
@@ -99,6 +106,9 @@ func (s *Service) Get(ctx context.Context) (SystemSettings, error) {
 			}
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return SystemSettings{}, err
+	}
 
 	for k, dv := range Defaults {
 		if _, ok := vals[k]; !ok {
@@ -113,16 +123,16 @@ func (s *Service) Get(ctx context.Context) (SystemSettings, error) {
 	}
 
 	return SystemSettings{
-		SystemName:          vals["systemName"],
-		Timezone:            vals["timezone"],
-		DefaultPageSize:     atoi(vals["defaultPageSize"]),
-		SyncEnabled:         vals["syncEnabled"] == "true",
-		SyncIntervalMinutes: atoi(vals["syncIntervalMinutes"]),
-		AlertEnabled:        vals["alertEnabled"] == "true",
-		AlertRetentionDays:  atoi(vals["alertRetentionDays"]),
-		SyncLogRetentionDays: atoi(vals["syncLogRetentionDays"]),
+		SystemName:            vals["systemName"],
+		Timezone:              vals["timezone"],
+		DefaultPageSize:       atoi(vals["defaultPageSize"]),
+		SyncEnabled:           vals["syncEnabled"] == "true",
+		SyncIntervalMinutes:   atoi(vals["syncIntervalMinutes"]),
+		AlertEnabled:          vals["alertEnabled"] == "true",
+		AlertRetentionDays:    atoi(vals["alertRetentionDays"]),
+		SyncLogRetentionDays:  atoi(vals["syncLogRetentionDays"]),
 		SnapshotRetentionDays: atoi(vals["snapshotRetentionDays"]),
-		UpdatedAt:           updatedStr,
+		UpdatedAt:             updatedStr,
 	}, nil
 }
 
@@ -146,6 +156,13 @@ func (s *Service) Update(ctx context.Context, dto map[string]interface{}) (Syste
 		case float64:
 			if !intKeys[k] {
 				return SystemSettings{}, &apiErr{http.StatusBadRequest, "不支持的系统设置：" + k}
+			}
+			if t != float64(int(t)) {
+				return SystemSettings{}, &apiErr{http.StatusBadRequest, "取值必须为整数：" + k}
+			}
+			// 范围校验（对齐 TS 版 class-validator @Min/@Max）
+			if rng, ok := intRanges[k]; ok && (int(t) < rng[0] || int(t) > rng[1]) {
+				return SystemSettings{}, &apiErr{http.StatusBadRequest, "取值超出范围：" + k}
 			}
 			strVal = itoa(int(t))
 			if allowed, ok := allowedInts[k]; ok && !intIn(int(t), allowed) {
@@ -197,10 +214,10 @@ func (s *Service) StatusOf(ctx context.Context) Status {
 }
 
 type CleanupResult struct {
-	SyncJobs   int    `json:"syncJobs"`
-	Snapshots  int    `json:"snapshots"`
-	Alerts     int    `json:"alerts"`
-	CleanedAt  string `json:"cleanedAt"`
+	SyncJobs  int    `json:"syncJobs"`
+	Snapshots int    `json:"snapshots"`
+	Alerts    int    `json:"alerts"`
+	CleanedAt string `json:"cleanedAt"`
 }
 
 func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {

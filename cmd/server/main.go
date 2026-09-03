@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
@@ -192,5 +191,3 @@ func corsMiddleware(origin string) gin.HandlerFunc {
 		c.Next()
 	}
 }
-
-var _ = strings.TrimSpace // keep import if unused later

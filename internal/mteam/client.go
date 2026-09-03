@@ -3,7 +3,6 @@ package mteam
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -73,9 +72,9 @@ type Client struct {
 	maxRetries int
 	httpClient *http.Client
 
-	mu          sync.Mutex
-	rateWindow  []time.Time // 滑动窗口时间戳
-	rateLimit   int         // 每分钟
+	mu         sync.Mutex
+	rateWindow []time.Time // 滑动窗口时间戳
+	rateLimit  int         // 每分钟
 }
 
 func NewClient(cfg *config.Config) *Client {
@@ -148,6 +147,12 @@ func (c *Client) doWithRetry(endpoint, apiKey, contentType string, body []byte, 
 		return &MTeamError{Code: domain.ErrNetworkError, Message: err.Error()}
 	}
 	defer resp.Body.Close()
+
+	// 5xx — 指数退避重试（对齐 TS 版：5xx / 网络错误都重试）
+	if resp.StatusCode >= 500 && attempt < maxRetries {
+		time.Sleep(c.backoffDelay(attempt))
+		return c.doWithRetry(endpoint, apiKey, contentType, body, out, attempt+1, maxRetries)
+	}
 
 	raw, _ := io.ReadAll(resp.Body)
 
@@ -222,5 +227,3 @@ func (c *Client) enforceRateLimit() {
 	}
 	c.rateWindow = append(c.rateWindow, time.Now())
 }
-
-var errNoData = errors.New("no data")

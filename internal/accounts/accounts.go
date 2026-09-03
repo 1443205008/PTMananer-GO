@@ -2,9 +2,9 @@
 package accounts
 
 import (
-	"log"
-	"database/sql"
 	"context"
+	"database/sql"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -18,8 +18,8 @@ import (
 )
 
 type Service struct {
-	pool    *sql.DB
-	crypto  *cryptoutil.CredentialCrypto
+	pool     *sql.DB
+	crypto   *cryptoutil.CredentialCrypto
 	registry *providers.Registry
 }
 
@@ -29,42 +29,42 @@ func NewService(pool *sql.DB, crypto *cryptoutil.CredentialCrypto, registry *pro
 
 // AccountResponse ⚠️ 绝不包含 encryptedApiKey / iv / authTag / 明文 API Key
 type AccountResponse struct {
-	ID              string        `json:"id"`
-	SiteCode        string        `json:"siteCode"`
-	SiteName        string        `json:"siteName"`
-	AccountName     string        `json:"accountName"`
-	Remark          *string       `json:"remark"`
-	ExternalUserID  *string       `json:"externalUserId"`
-	Username        *string       `json:"username"`
-	AvatarURL       *string       `json:"avatarUrl"`
-	JoinedAt        *string       `json:"joinedAt"`
-	IsEnabled       bool          `json:"isEnabled"`
-	SyncEnabled     bool          `json:"syncEnabled"`
-	Status          string        `json:"status"`
-	LastSyncAt      *string       `json:"lastSyncAt"`
-	CreatedAt       string        `json:"createdAt"`
-	UpdatedAt       string        `json:"updatedAt"`
-	Stats           *AccountStats `json:"stats"`
+	ID             string        `json:"id"`
+	SiteCode       string        `json:"siteCode"`
+	SiteName       string        `json:"siteName"`
+	AccountName    string        `json:"accountName"`
+	Remark         *string       `json:"remark"`
+	ExternalUserID *string       `json:"externalUserId"`
+	Username       *string       `json:"username"`
+	AvatarURL      *string       `json:"avatarUrl"`
+	JoinedAt       *string       `json:"joinedAt"`
+	IsEnabled      bool          `json:"isEnabled"`
+	SyncEnabled    bool          `json:"syncEnabled"`
+	Status         string        `json:"status"`
+	LastSyncAt     *string       `json:"lastSyncAt"`
+	CreatedAt      string        `json:"createdAt"`
+	UpdatedAt      string        `json:"updatedAt"`
+	Stats          *AccountStats `json:"stats"`
 }
 
 type AccountStats struct {
-	UploadBytes    string  `json:"uploadBytes"`
-	DownloadBytes  string  `json:"downloadBytes"`
-	Ratio          float64 `json:"ratio"`
-	Bonus          float64 `json:"bonus"`
-	SeedingCount   int     `json:"seedingCount"`
-	SeedingBytes   string  `json:"seedingBytes"`
-	LeechingCount  int     `json:"leechingCount"`
-	HitAndRunCount int     `json:"hitAndRunCount"`
-	RoleID         *int    `json:"roleId"`
-	LevelName      *string `json:"levelName"`
-	IsWarned       bool    `json:"isWarned"`
-	IsVIP          bool    `json:"isVip"`
-	IsDonor        bool    `json:"isDonor"`
-	LastLoginAt    *string `json:"lastLoginAt"`
-	LastTrackerAt  *string `json:"lastTrackerAt"`
-	SiteStatus     string  `json:"siteStatus"`
-	SyncedAt       *string `json:"syncedAt"`
+	UploadBytes     string   `json:"uploadBytes"`
+	DownloadBytes   string   `json:"downloadBytes"`
+	Ratio           float64  `json:"ratio"`
+	Bonus           float64  `json:"bonus"`
+	SeedingCount    int      `json:"seedingCount"`
+	SeedingBytes    string   `json:"seedingBytes"`
+	LeechingCount   int      `json:"leechingCount"`
+	HitAndRunCount  int      `json:"hitAndRunCount"`
+	RoleID          *int     `json:"roleId"`
+	LevelName       *string  `json:"levelName"`
+	IsWarned        bool     `json:"isWarned"`
+	IsVIP           bool     `json:"isVip"`
+	IsDonor         bool     `json:"isDonor"`
+	LastLoginAt     *string  `json:"lastLoginAt"`
+	LastTrackerAt   *string  `json:"lastTrackerAt"`
+	SiteStatus      string   `json:"siteStatus"`
+	SyncedAt        *string  `json:"syncedAt"`
 	BonusHourlyRate *float64 `json:"bonusHourlyRate"`
 }
 
@@ -84,23 +84,23 @@ type updateDTO struct {
 }
 
 type accountRow struct {
-	id, siteCode, siteName, accountName string
+	id, siteCode, siteName, accountName         string
 	remark, externalUserID, username, avatarURL *string
-	joinedAt, lastSyncAt *time.Time
-	isEnabled, syncEnabled bool
-	status string
-	createdAt, updatedAt time.Time
-	hasStats bool
+	joinedAt, lastSyncAt                        *time.Time
+	isEnabled, syncEnabled                      bool
+	status                                      string
+	createdAt, updatedAt                        time.Time
+	hasStats                                    bool
 	// stats
-	uploadBytes, downloadBytes, seedingBytes int64
-	ratio, bonus float64
+	uploadBytes, downloadBytes, seedingBytes    int64
+	ratio, bonus                                float64
 	seedingCount, leechingCount, hitAndRunCount int
-	roleID *int
-	levelName *string
-	isWarned, isVIP, isDonor bool
-	lastLoginAt, lastTrackerAt, syncedAt *time.Time
-	siteStatus string
-	bonusHourlyRate *float64
+	roleID                                      *int
+	levelName                                   *string
+	isWarned, isVIP, isDonor                    bool
+	lastLoginAt, lastTrackerAt, syncedAt        *time.Time
+	siteStatus                                  string
+	bonusHourlyRate                             *float64
 }
 
 const accountSelect = `
@@ -118,7 +118,9 @@ FROM TrackerAccount a
 JOIN TrackerSite s ON s.id = a.siteId
 LEFT JOIN TrackerStats t ON t.accountId = a.id`
 
-func scanAccount(row interface{ Scan(dest ...interface{}) error }) (*accountRow, error) {
+func scanAccount(row interface {
+	Scan(dest ...interface{}) error
+}) (*accountRow, error) {
 	var r accountRow
 	err := row.Scan(&r.id, &r.siteCode, &r.siteName, &r.accountName, &r.remark, &r.externalUserID,
 		&r.username, &r.avatarURL, &r.joinedAt, &r.isEnabled, &r.syncEnabled,
@@ -148,23 +150,23 @@ func (r *accountRow) toResponse() AccountResponse {
 	stats := (*AccountStats)(nil)
 	if r.hasStats {
 		stats = &AccountStats{
-			UploadBytes:    int64Str(r.uploadBytes),
-			DownloadBytes:  int64Str(r.downloadBytes),
-			Ratio:          round4(r.ratio),
-			Bonus:          round2(r.bonus),
-			SeedingCount:   r.seedingCount,
-			SeedingBytes:   int64Str(r.seedingBytes),
-			LeechingCount:  r.leechingCount,
-			HitAndRunCount: r.hitAndRunCount,
-			RoleID:         r.roleID,
-			LevelName:      r.levelName,
-			IsWarned:       r.isWarned,
-			IsVIP:          r.isVIP,
-			IsDonor:        r.isDonor,
-			LastLoginAt:    fmtTime(r.lastLoginAt),
-			LastTrackerAt:  fmtTime(r.lastTrackerAt),
-			SiteStatus:     r.siteStatus,
-			SyncedAt:       fmtTime(r.syncedAt),
+			UploadBytes:     int64Str(r.uploadBytes),
+			DownloadBytes:   int64Str(r.downloadBytes),
+			Ratio:           round4(r.ratio),
+			Bonus:           round2(r.bonus),
+			SeedingCount:    r.seedingCount,
+			SeedingBytes:    int64Str(r.seedingBytes),
+			LeechingCount:   r.leechingCount,
+			HitAndRunCount:  r.hitAndRunCount,
+			RoleID:          r.roleID,
+			LevelName:       r.levelName,
+			IsWarned:        r.isWarned,
+			IsVIP:           r.isVIP,
+			IsDonor:         r.isDonor,
+			LastLoginAt:     fmtTime(r.lastLoginAt),
+			LastTrackerAt:   fmtTime(r.lastTrackerAt),
+			SiteStatus:      r.siteStatus,
+			SyncedAt:        fmtTime(r.syncedAt),
 			BonusHourlyRate: r.bonusHourlyRate,
 		}
 	}
@@ -175,7 +177,7 @@ func (r *accountRow) toResponse() AccountResponse {
 		SyncEnabled: r.syncEnabled, Status: r.status, LastSyncAt: fmtTime(r.lastSyncAt),
 		CreatedAt: r.createdAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt: r.updatedAt.UTC().Format(time.RFC3339Nano),
-		Stats: stats,
+		Stats:     stats,
 	}
 }
 
@@ -299,6 +301,9 @@ func (s *Service) ListAll() ([]AccountResponse, error) {
 			return nil, err
 		}
 		out = append(out, r.toResponse())
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

@@ -11,19 +11,19 @@ import (
 const devFallbackSecret = "dev-only-insecure-secret"
 
 type Config struct {
-	Port                   int
-	NodeEnv                string
-	DatabaseURL            string
-	RedisURL               string
+	Port                    int
+	NodeEnv                 string
+	DatabaseURL             string
+	RedisURL                string
 	CredentialEncryptionKey string
-	JWTSecret              string
-	JWTExpiresIn           string // e.g. "7d"
-	MTeamBaseURL           string
-	MTeamTimeoutMs         int
-	MTeamMaxRetries        int
-	MTeamRateLimitPerMin   int
-	CorsOrigin             string
-	CookieSecure           bool
+	JWTSecret               string
+	JWTExpiresIn            string // e.g. "7d"
+	MTeamBaseURL            string
+	MTeamTimeoutMs          int
+	MTeamMaxRetries         int
+	MTeamRateLimitPerMin    int
+	CorsOrigin              string
+	CookieSecure            bool
 }
 
 func env(key, def string) string {
@@ -88,10 +88,10 @@ func Load() (*Config, error) {
 		JWTExpiresIn:            env("JWT_EXPIRES_IN", "7d"),
 		MTeamBaseURL:            env("MTEAM_BASE_URL", "https://api.m-team.cc"),
 		MTeamTimeoutMs:          timeoutMs,
-		MTeamMaxRetries:        maxRetries,
-		MTeamRateLimitPerMin:   rateLimit,
-		CorsOrigin:             env("CORS_ORIGIN", "http://localhost:3000"),
-		CookieSecure:           env("COOKIE_SECURE", "false") == "true",
+		MTeamMaxRetries:         maxRetries,
+		MTeamRateLimitPerMin:    rateLimit,
+		CorsOrigin:              env("CORS_ORIGIN", "http://localhost:3000"),
+		CookieSecure:            env("COOKIE_SECURE", "false") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return nil, errors.New("DATABASE_URL is required")

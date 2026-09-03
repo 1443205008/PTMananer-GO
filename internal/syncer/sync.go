@@ -2,12 +2,11 @@
 package syncer
 
 import (
-	"database/sql"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
-	"strconv"
 	"time"
 
 	"github.com/1443205008/ptmanager-go/internal/db"
@@ -20,9 +19,9 @@ import (
 // Queue 用 Redis List 实现的任务队列（替代 BullMQ，语义对齐：
 // 立即入队返回、异步消费、指数退避重试）。
 type Queue struct {
-	rdb  *redis.Client
-	svc  *Service
-	key  string
+	rdb *redis.Client
+	svc *Service
+	key string
 }
 
 func NewQueue(rdb *redis.Client, svc *Service) *Queue {
@@ -178,6 +177,9 @@ func (s *Scheduler) scheduleAccountSyncs(ctx context.Context) {
 				count++
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return
 	}
 	if count > 0 {
 		log.Printf("[scheduler] enqueued %d scheduled account stats + torrent syncs", count)
@@ -455,6 +457,3 @@ func nilIfEmptyStr(s string) interface{} {
 	}
 	return s
 }
-
-var _ = strconv.Itoa
-var _ = fmt.Sprintf

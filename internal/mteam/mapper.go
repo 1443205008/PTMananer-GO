@@ -140,19 +140,19 @@ func ToProfile(m *Member) domain.TrackerProfile {
 // ToStats Member + counts → domain.TrackerStats
 func ToStats(m *Member, seedingCount, leechingCount, hitAndRunCount int, bonusHourlyRate *float64) domain.TrackerStats {
 	return domain.TrackerStats{
-		UploadBytes:    toBigInt(m.MemberCount.Uploaded),
-		DownloadBytes:  toBigInt(m.MemberCount.Downloaded),
-		Ratio:          toFloat(m.MemberCount.ShareRate),
-		Bonus:          toFloat(m.MemberCount.Bonus),
-		SeedingCount:   seedingCount,
-		LeechingCount:  leechingCount,
-		HitAndRunCount: hitAndRunCount,
-		IsWarned:       m.MemberStatus.Warned,
-		IsVIP:          m.MemberStatus.VIP,
-		IsDonor:        m.MemberStatus.Donor,
-		LastLoginAt:    parseMTeamDate(m.MemberStatus.LastLogin),
-		LastTrackerAt:  parseMTeamDate(m.MemberStatus.LastTracker),
-		SnapshotTime:   time.Now(),
+		UploadBytes:     toBigInt(m.MemberCount.Uploaded),
+		DownloadBytes:   toBigInt(m.MemberCount.Downloaded),
+		Ratio:           toFloat(m.MemberCount.ShareRate),
+		Bonus:           toFloat(m.MemberCount.Bonus),
+		SeedingCount:    seedingCount,
+		LeechingCount:   leechingCount,
+		HitAndRunCount:  hitAndRunCount,
+		IsWarned:        m.MemberStatus.Warned,
+		IsVIP:           m.MemberStatus.VIP,
+		IsDonor:         m.MemberStatus.Donor,
+		LastLoginAt:     parseMTeamDate(m.MemberStatus.LastLogin),
+		LastTrackerAt:   parseMTeamDate(m.MemberStatus.LastTracker),
+		SnapshotTime:    time.Now(),
 		BonusHourlyRate: bonusHourlyRate,
 	}
 }
@@ -193,16 +193,16 @@ func ToTorrent(item *TorrentItem, queryType string) *domain.TrackerTorrent {
 	}
 
 	return &domain.TrackerTorrent{
-		SiteTorrentID:  item.Torrent.ID,
-		Name:           item.Torrent.Name,
-		SizeBytes:      toBigInt(item.Torrent.Size),
-		Status:         mapQueryTypeToStatus(queryType),
-		UploadedBytes:  uploadedBytes,
+		SiteTorrentID:   item.Torrent.ID,
+		Name:            item.Torrent.Name,
+		SizeBytes:       toBigInt(item.Torrent.Size),
+		Status:          mapQueryTypeToStatus(queryType),
+		UploadedBytes:   uploadedBytes,
 		DownloadedBytes: downloadedBytes,
-		Ratio:          ratio,
-		SeedTimeSecs:   seedTimeSecs,
-		LastActivityAt: lastActivityAt,
-		CompletedAt:    completedAt,
+		Ratio:           ratio,
+		SeedTimeSecs:    seedTimeSecs,
+		LastActivityAt:  lastActivityAt,
+		CompletedAt:     completedAt,
 	}
 }
 

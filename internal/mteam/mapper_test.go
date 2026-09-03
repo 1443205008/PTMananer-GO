@@ -57,7 +57,7 @@ func TestToBigIntFloatInt(t *testing.T) {
 func TestToProfile(t *testing.T) {
 	m := &Member{
 		ID: "369195", Username: "tester", Role: "3",
-		CreatedDate: "2020-05-10 08:00:00",
+		CreatedDate:  "2020-05-10 08:00:00",
 		MemberCount:  MemberCount{Bonus: "100.5", Uploaded: "1000", Downloaded: "500", ShareRate: "2.0"},
 		MemberStatus: MemberStatus{VIP: true},
 	}
@@ -83,7 +83,7 @@ func TestToProfile(t *testing.T) {
 
 func TestToTorrentSnatchedPriority(t *testing.T) {
 	item := &TorrentItem{
-		Torrent: TorrentMeta{ID: "123", Name: "ubuntu.iso", Size: "3528000000000"},
+		Torrent:  TorrentMeta{ID: "123", Name: "ubuntu.iso", Size: "3528000000000"},
 		Snatched: &TorrentSnatched{Uploaded: "5000", Downloaded: "2500", Seedtime: "3600"},
 		Peer:     &TorrentPeer{Uploaded: "10", Downloaded: "5"},
 	}

@@ -3,9 +3,10 @@ package auth
 
 import (
 	"database/sql"
-	"strconv"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/1443205008/ptmanager-go/internal/config"
@@ -64,8 +65,7 @@ func (s *Service) Login(email, password string) (string, AuthUser, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var id, hash, name *string
 	var createdAt time.Time
-	err := s.pool.QueryRow(`SELECT id, password, name, createdAt FROM User WHERE email=?`, email,
-	).Scan(&id, &hash, &name, &createdAt)
+	err := s.pool.QueryRow(`SELECT id, password, name, createdAt FROM User WHERE email=?`, email).Scan(&id, &hash, &name, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "邮箱或密码错误"}
@@ -97,8 +97,7 @@ func (s *Service) GetUser(userID string) (AuthUser, error) {
 	var email string
 	var name *string
 	var createdAt time.Time
-	err := s.pool.QueryRow(`SELECT email, name, createdAt FROM User WHERE id=?`, userID,
-	).Scan(&email, &name, &createdAt)
+	err := s.pool.QueryRow(`SELECT email, name, createdAt FROM User WHERE id=?`, userID).Scan(&email, &name, &createdAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "登录用户不存在"}
@@ -132,8 +131,15 @@ func WriteError(c *gin.Context, err error) {
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 
+// loginRateLimit 每 IP 每分钟 5 次登录尝试（对齐 TS 版 @Throttle）
+var loginRateLimit = newIPRateLimiter(5, time.Minute)
+
 func LoginHandler(svc *Service, authCfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if !loginRateLimit.Allow(c.ClientIP()) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"statusCode": 429, "message": "尝试次数过多，请稍后再试"})
+			return
+		}
 		var dto struct {
 			Email    string `json:"email" binding:"required,email"`
 			Password string `json:"password" binding:"required,min=1"`
@@ -212,7 +218,7 @@ func (m *AuthMiddleware) Handle(c *gin.Context) {
 	claims := &Claims{}
 	tok, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) {
 		return []byte(m.cfg.JWTSecret), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil || !tok.Valid {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"statusCode": 401, "message": "登录已失效，请重新登录"})
 		return
@@ -220,4 +226,36 @@ func (m *AuthMiddleware) Handle(c *gin.Context) {
 	c.Set("userID", claims.Sub)
 	c.Set("email", claims.Email)
 	c.Next()
+}
+
+// ─── 简单 IP 限流器（滑动窗口）────────────────────────────────────────
+
+type ipRateLimiter struct {
+	mu     sync.Mutex
+	visits map[string][]time.Time
+	limit  int
+	window time.Duration
+}
+
+func newIPRateLimiter(limit int, window time.Duration) *ipRateLimiter {
+	return &ipRateLimiter{visits: map[string][]time.Time{}, limit: limit, window: window}
+}
+
+func (l *ipRateLimiter) Allow(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	// 清理过期
+	valid := l.visits[ip][:0]
+	for _, t := range l.visits[ip] {
+		if now.Sub(t) < l.window {
+			valid = append(valid, t)
+		}
+	}
+	if len(valid) >= l.limit {
+		l.visits[ip] = valid
+		return false
+	}
+	l.visits[ip] = append(valid, now)
+	return true
 }

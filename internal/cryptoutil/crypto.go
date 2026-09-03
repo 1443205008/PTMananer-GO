@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/scrypt"
@@ -149,5 +148,3 @@ func (c *CredentialCrypto) Decrypt(encryptedAPIKey, ivHex, authTagHex string) (s
 	}
 	return string(plaintext), nil
 }
-
-var _ = strconv.Itoa
