@@ -99,7 +99,7 @@ func main() {
 	{
 		pubAuth := public.Group("/auth")
 		pubAuth.POST("/login", auth.LoginHandler(authSvc, cfg))
-		pubAuth.POST("/logout", auth.LogoutHandler())
+		pubAuth.POST("/logout", auth.LogoutHandler(cfg))
 	}
 
 	secured := api.Group("", authMW.Handle)

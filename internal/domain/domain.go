@@ -119,6 +119,12 @@ const (
 	ErrUnknown          TrackerErrorCode = "UNKNOWN_ERROR"
 )
 
+// Coder 供跨包错误码提取（MTeamError 等实现此接口）
+type Coder interface {
+	error
+	TrackerCode() TrackerErrorCode
+}
+
 // TrackerError 领域错误（对齐 TS 版 common/errors/tracker-error.ts）
 type TrackerError struct {
 	Code      TrackerErrorCode
@@ -127,6 +133,8 @@ type TrackerError struct {
 }
 
 func (e *TrackerError) Error() string { return e.Message }
+
+func (e *TrackerError) TrackerCode() TrackerErrorCode { return e.Code }
 
 func NewTrackerError(code TrackerErrorCode, msg string) *TrackerError {
 	return &TrackerError{Code: code, Message: msg}

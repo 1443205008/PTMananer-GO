@@ -247,6 +247,13 @@ type parsedTorrent struct {
 	name       string
 }
 
+// ParseTorrentPublic 导出供外部调用/测试
+func ParseTorrentPublic(data []byte) (*ParsedTorrent, error) {
+	return parseTorrent(data)
+}
+
+type ParsedTorrent = parsedTorrent
+
 func parseTorrent(data []byte) (*parsedTorrent, error) {
 	// announce
 	announce, err := bencodeStringForKey(data, []byte("8:announce"))
@@ -264,6 +271,9 @@ func parseTorrent(data []byte) (*parsedTorrent, error) {
 	infoEnd, err := bencodeSkip(data, infoStart)
 	if err != nil {
 		return nil, fmt.Errorf("解析 info 段失败: %w", err)
+	}
+	if infoEnd <= infoStart || infoEnd > len(data) {
+		return nil, fmt.Errorf("info 段边界异常")
 	}
 	sum := sha1.Sum(data[infoStart:infoEnd])
 
@@ -288,14 +298,16 @@ func bencodeStringForKey(data, key []byte) (string, error) {
 		return "", fmt.Errorf("key not found")
 	}
 	p := pos + len(key)
+	if p >= len(data) {
+		return "", fmt.Errorf("bad string")
+	}
 	colon := bytes.IndexByte(data[p:], ':')
 	if colon == -1 {
 		return "", fmt.Errorf("bad string")
 	}
-	lenStr := string(data[p : p+colon])
-	length, err := strconv.Atoi(lenStr)
-	if err != nil {
-		return "", err
+	length, err := strconv.Atoi(string(data[p : p+colon]))
+	if err != nil || length < 0 {
+		return "", fmt.Errorf("bad string length")
 	}
 	start := p + colon + 1
 	if start+length > len(data) {
@@ -306,7 +318,7 @@ func bencodeStringForKey(data, key []byte) (string, error) {
 
 // bencodeSkip 跳过一个 bencode 值，返回结束位置（不含）
 func bencodeSkip(buf []byte, pos int) (int, error) {
-	if pos >= len(buf) {
+	if pos < 0 || pos >= len(buf) {
 		return 0, fmt.Errorf("eof")
 	}
 	switch buf[pos] {
@@ -323,7 +335,13 @@ func bencodeSkip(buf []byte, pos int) (int, error) {
 			if err != nil {
 				return 0, err
 			}
+			if np <= p { // 防御：无进展即损坏数据
+				return 0, fmt.Errorf("malformed bencode")
+			}
 			p = np
+		}
+		if p >= len(buf) { // 缺少闭合 'e'
+			return 0, fmt.Errorf("unterminated list")
 		}
 		return p + 1, nil
 	case 'd': // 字典 d...e（key、value 交替）
@@ -333,11 +351,20 @@ func bencodeSkip(buf []byte, pos int) (int, error) {
 			if err != nil {
 				return 0, err
 			}
+			if np <= p {
+				return 0, fmt.Errorf("malformed bencode")
+			}
 			np2, err := bencodeSkip(buf, np) // value
 			if err != nil {
 				return 0, err
 			}
+			if np2 <= np {
+				return 0, fmt.Errorf("malformed bencode")
+			}
 			p = np2
+		}
+		if p >= len(buf) {
+			return 0, fmt.Errorf("unterminated dict")
 		}
 		return p + 1, nil
 	default: // 字符串 N:...
@@ -346,10 +373,14 @@ func bencodeSkip(buf []byte, pos int) (int, error) {
 			return 0, fmt.Errorf("bad string")
 		}
 		length, err := strconv.Atoi(string(buf[pos : pos+colon]))
-		if err != nil {
-			return 0, err
+		if err != nil || length < 0 {
+			return 0, fmt.Errorf("bad string length")
 		}
-		return pos + colon + 1 + length, nil
+		end := pos + colon + 1 + length
+		if end > len(buf) {
+			return 0, fmt.Errorf("string out of range")
+		}
+		return end, nil
 	}
 }
 
@@ -358,16 +389,17 @@ func sumLengths(info []byte) int64 {
 	var total int64
 	pos := 0
 	lengthKey := []byte("6:length")
-	for {
+	for pos <= len(info) {
 		idx := bytes.Index(info[pos:], lengthKey)
 		if idx == -1 {
 			break
 		}
 		abs := pos + idx
-		if abs+len(lengthKey) < len(info) && info[abs+len(lengthKey)] == 'i' {
-			e := bytes.IndexByte(info[abs+len(lengthKey):], 'e')
-			if e != -1 {
-				if n, err := strconv.ParseInt(string(info[abs+len(lengthKey)+1:abs+len(lengthKey)+e]), 10, 64); err == nil {
+		vStart := abs + len(lengthKey)
+		if vStart < len(info) && info[vStart] == 'i' {
+			e := bytes.IndexByte(info[vStart:], 'e')
+			if e > 1 { // 至少 1 位数字
+				if n, err := strconv.ParseInt(string(info[vStart+1:vStart+e]), 10, 64); err == nil && n > 0 {
 					total += n
 				}
 			}

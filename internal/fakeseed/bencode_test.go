@@ -104,3 +104,27 @@ func TestGenPeerIDAndKey(t *testing.T) {
 func bytesIndex(b []byte, sub string) int {
 	return bytesIndexImpl(b, sub)
 }
+
+func TestParseTorrentMalformed(t *testing.T) {
+	// 损坏/截断的 torrent 绝不能 panic
+	cases := map[string][]byte{
+		"truncated-info":  []byte("d8:announce31:http://tracker.example/announce4:infod6:lengthi100e"),
+		"empty":           {},
+		"only-info-key":   []byte("4:info"),
+		"nested-list-cut": []byte("d8:announce31:http://t.example/a4:infod5:filesl"),
+		"bad-str-len":    []byte("d8:announce31:http://t.example/a4:infod4:name99:shor"),
+		"garbage":         []byte("xxxxx"),
+	}
+	for name, data := range cases {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("%s: PANIC %v", name, r)
+				}
+			}()
+			if _, err := parseTorrent(data); err == nil {
+				t.Errorf("%s: expected error, got nil", name)
+			}
+		}()
+	}
+}

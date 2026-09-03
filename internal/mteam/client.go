@@ -25,6 +25,9 @@ type MTeamError struct {
 
 func (e *MTeamError) Error() string { return e.Message }
 
+// TrackerCode 实现 domain.Coder，供 syncer 提取错误码
+func (e *MTeamError) TrackerCode() domain.TrackerErrorCode { return e.Code }
+
 // httpStatusToTrackerError HTTP 状态码 → TrackerErrorCode
 func httpStatusToTrackerError(status int) domain.TrackerErrorCode {
 	switch {

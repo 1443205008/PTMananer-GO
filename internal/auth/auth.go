@@ -3,6 +3,7 @@ package auth
 
 import (
 	"database/sql"
+	"strconv"
 	"net/http"
 	"strings"
 	"time"
@@ -38,8 +39,8 @@ func parseDuration(s string) time.Duration {
 		return 7 * 24 * time.Hour
 	}
 	if strings.HasSuffix(s, "d") && isAllDigits(strings.TrimSuffix(s, "d")) {
-		d, _ := time.ParseDuration(strings.TrimSuffix(s, "d") + "h")
-		return d
+		days, _ := strconv.Atoi(strings.TrimSuffix(s, "d"))
+		return time.Duration(days) * 24 * time.Hour
 	}
 	if d, err := time.ParseDuration(s); err == nil {
 		return d
@@ -151,9 +152,9 @@ func LoginHandler(svc *Service, authCfg *config.Config) gin.HandlerFunc {
 	}
 }
 
-func LogoutHandler() gin.HandlerFunc {
+func LogoutHandler(authCfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		c.SetCookie(CookieName, "", -1, "/", "", false, true)
+		c.SetCookie(CookieName, "", -1, "/", "", authCfg.CookieSecure, true)
 		c.JSON(http.StatusOK, gin.H{"success": true})
 	}
 }

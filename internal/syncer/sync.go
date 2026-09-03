@@ -94,23 +94,15 @@ func (q *Queue) process(ctx context.Context, job Job) {
 	if err != nil {
 		job.Attempts++
 		if job.Attempts < job.MaxAttempt {
-			// 指数退避：5s * 2^(n-1)
+			// 指数退避：5s * 2^(n-1)。每个 job 自己起定时器，到点只搬回自己
 			delay := time.Duration(5*(1<<(job.Attempts-1))) * time.Second
 			log.Printf("[queue] job %s:%s failed (attempt %d/%d), retry in %v: %v",
 				job.Name, job.AccountID, job.Attempts, job.MaxAttempt, delay, err)
 			payload, _ := json.Marshal(job)
-			q.rdb.LPush(ctx, q.key+"retry", payload)
 			go func() {
 				time.Sleep(delay)
-				// 从 retry 队列取回（可能已有多个，逐个搬回主队列）
-				for {
-					item, err := q.rdb.LPop(context.Background(), q.key+"retry").Result()
-					if err != nil {
-						return
-					}
-					// 简化：睡够再回主队列
-					q.rdb.RPush(context.Background(), q.key, item)
-				}
+				// 只把这个 job 搬回主队列（不再全局清空 retry 队列，避免提前唤醒别人的退避）
+				q.rdb.RPush(context.Background(), q.key, payload)
 			}()
 			return
 		}
@@ -392,8 +384,9 @@ func (s *Service) handleSyncFailure(ctx context.Context, accountID, jobID string
 	if te, ok := err.(*domain.TrackerError); ok {
 		code = te.Code
 		isAuthErr = te.RequiresCredentialReset()
-	} else if mte, ok := err.(*mteamErrWithCode); ok {
-		code = mte.code
+	} else if coder, ok := err.(domain.Coder); ok {
+		// MTeamError 等实现 domain.Coder 的错误
+		code = coder.TrackerCode()
 		isAuthErr = code == domain.ErrAuthInvalid || code == domain.ErrAuthExpired
 	}
 
@@ -441,11 +434,6 @@ func (s *Service) handleSyncFailure(ctx context.Context, accountID, jobID string
 	}
 	log.Printf("[sync] failed for account %s: [%s] %s", accountID, code, safeMessage)
 }
-
-// mteamErrWithCode 供错误码提取（避免依赖 mteam 包）
-type mteamErrWithCode struct{ code domain.TrackerErrorCode }
-
-func (e *mteamErrWithCode) Error() string { return string(e.code) }
 
 func roleIDOrNull(id int) interface{} {
 	if id == 0 {
