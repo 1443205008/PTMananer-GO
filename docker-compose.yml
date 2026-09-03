@@ -1,0 +1,50 @@
+services:
+  backend:
+    build: .
+    container_name: ptmanager-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://ptmanager:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/ptmanager?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      BACKEND_PORT: "4000"
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?set in .env}
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?set in .env}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      RUN_SEED: "true"
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@pt-manager.local}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set in .env}
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ptmanager-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ptmanager
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ptmanager
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ptmanager"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ptmanager-redis
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+  redisdata:
