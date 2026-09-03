@@ -1,42 +1,42 @@
 services:
-  backend:
+  app:
     build: .
-    container_name: ptmanager-backend
+    container_name: ptmanager-app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://ptmanager:${POSTGRES_PASSWORD:?set in .env}@postgres:5432/ptmanager?sslmode=disable
+      DATABASE_URL: mysql://ptmanager:${MYSQL_PASSWORD:?set in .env}@mysql:3306/ptmanager
       REDIS_URL: redis://redis:6379
       BACKEND_PORT: "4000"
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:?set in .env}
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:?set in .env}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
       RUN_SEED: "true"
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@pt-manager.local}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set in .env}
     ports:
       - "4000:4000"
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_started
 
-  postgres:
-    image: postgres:16-alpine
-    container_name: ptmanager-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: ptmanager-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ptmanager
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
-      POSTGRES_DB: ptmanager
+      MYSQL_USER: ptmanager
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env}
+      MYSQL_DATABASE: ptmanager
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ptmanager"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
   redis:
     image: redis:7-alpine
@@ -46,5 +46,5 @@ services:
       - redisdata:/data
 
 volumes:
-  pgdata:
+  mysqldata:
   redisdata:

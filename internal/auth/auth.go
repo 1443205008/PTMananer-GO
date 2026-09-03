@@ -2,7 +2,7 @@
 package auth
 
 import (
-	"context"
+	"database/sql"
 	"net/http"
 	"strings"
 	"time"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
 )
 
 const CookieName = "pt_manager_session"
@@ -25,11 +24,11 @@ type AuthUser struct {
 }
 
 type Service struct {
-	pool *pgxpoolAlias
+	pool *sql.DB
 	cfg  *config.Config
 }
 
-func NewService(pool *pgxpoolAlias, cfg *config.Config) *Service {
+func NewService(pool *sql.DB, cfg *config.Config) *Service {
 	return &Service{pool: pool, cfg: cfg}
 }
 
@@ -64,11 +63,10 @@ func (s *Service) Login(email, password string) (string, AuthUser, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	var id, hash, name *string
 	var createdAt time.Time
-	err := s.pool.QueryRow(context.Background(),
-		`SELECT "id", "password", "name", "createdAt" FROM "User" WHERE "email"=$1`, email,
+	err := s.pool.QueryRow(`SELECT id, password, name, createdAt FROM User WHERE email=?`, email,
 	).Scan(&id, &hash, &name, &createdAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return "", AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "邮箱或密码错误"}
 		}
 		return "", AuthUser{}, err
@@ -98,11 +96,10 @@ func (s *Service) GetUser(userID string) (AuthUser, error) {
 	var email string
 	var name *string
 	var createdAt time.Time
-	err := s.pool.QueryRow(context.Background(),
-		`SELECT "email", "name", "createdAt" FROM "User" WHERE "id"=$1`, userID,
+	err := s.pool.QueryRow(`SELECT email, name, createdAt FROM User WHERE id=?`, userID,
 	).Scan(&email, &name, &createdAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "登录用户不存在"}
 		}
 		return AuthUser{}, err

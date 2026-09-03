@@ -2,6 +2,8 @@
 package search
 
 import (
+	"log"
+	"database/sql"
 	"context"
 	"net/http"
 	"sort"
@@ -12,16 +14,14 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/providers"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	registry *providers.Registry
 }
 
-func NewService(pool *pgxpool.Pool, registry *providers.Registry) *Service {
+func NewService(pool *sql.DB, registry *providers.Registry) *Service {
 	return &Service{pool: pool, registry: registry}
 }
 
@@ -59,19 +59,19 @@ func (s *Service) resolveSearchAccount(ctx context.Context) (string, string, mte
 	type row struct{ id, code string }
 	var r row
 	// 1. ACTIVE 优先；2. 非 CREDENTIAL_INVALID；3. 任意启用账户（返回明确错误）
-	err := s.pool.QueryRow(ctx, `
-		SELECT a."id", s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId"
-		WHERE a."isEnabled"=true AND a."status"='ACTIVE'
-		ORDER BY a."createdAt" DESC LIMIT 1`).Scan(&r.id, &r.code)
-	if err == pgx.ErrNoRows {
-		err = s.pool.QueryRow(ctx, `
-			SELECT a."id", s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId"
-			WHERE a."isEnabled"=true AND a."status" != 'CREDENTIAL_INVALID'
-			ORDER BY a."createdAt" DESC LIMIT 1`).Scan(&r.id, &r.code)
+	err := s.pool.QueryRow(`
+		SELECT a.id, s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId
+		WHERE a.isEnabled=true AND a.status='ACTIVE'
+		ORDER BY a.createdAt DESC LIMIT 1`).Scan(&r.id, &r.code)
+	if err == sql.ErrNoRows {
+		err = s.pool.QueryRow(`
+			SELECT a.id, s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId
+			WHERE a.isEnabled=true AND a.status != 'CREDENTIAL_INVALID'
+			ORDER BY a.createdAt DESC LIMIT 1`).Scan(&r.id, &r.code)
 	}
-	if err == pgx.ErrNoRows {
+	if err == sql.ErrNoRows {
 		var anyID string
-		if err2 := s.pool.QueryRow(ctx, `SELECT "id" FROM "TrackerAccount" WHERE "isEnabled"=true LIMIT 1`).Scan(&anyID); err2 == nil {
+		if err2 := s.pool.QueryRow(`SELECT id FROM TrackerAccount WHERE isEnabled=true LIMIT 1`).Scan(&anyID); err2 == nil {
 			return "", "", nil, &apiErr{http.StatusServiceUnavailable, "账户 API Key 无效或已过期，请在站点账户中更新后再搜索"}
 		}
 		return "", "", nil, &apiErr{http.StatusServiceUnavailable, "没有可用的账户，请先添加 M-Team 账户后再搜索"}
@@ -107,8 +107,8 @@ func (s *Service) SearchTorrents(keyword string, page, pageSize int, mode, disco
 
 	// 标记已在做种的种子
 	seeding := map[string]bool{}
-	rows, err := s.pool.Query(ctx, `
-		SELECT "siteTorrentId" FROM "TrackerTorrent" WHERE "accountId"=$1 AND "status"='SEEDING'`, accountID)
+	rows, err := s.pool.Query(`
+		SELECT siteTorrentId FROM TrackerTorrent WHERE accountId=? AND status='SEEDING'`, accountID)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -253,6 +253,7 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(ae.status, gin.H{"statusCode": ae.status, "message": ae.message})
 		return
 	}
+	log.Printf("[http] 500 on %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 

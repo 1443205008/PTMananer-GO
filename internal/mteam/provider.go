@@ -1,7 +1,7 @@
 package mteam
 
 import (
-	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,7 +12,6 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/cryptoutil"
 	"github.com/1443205008/ptmanager-go/internal/domain"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Provider M-Team TrackerProvider 实现。
@@ -21,11 +20,11 @@ import (
 // - seedingStats / getCrimeRecords 当前 API Key 无权 → 做种数用 getUserTorrentList total
 type Provider struct {
 	client *Client
-	pool   *pgxpool.Pool
+	pool   *sql.DB
 	crypto *cryptoutil.CredentialCrypto
 }
 
-func NewProvider(cfg *config.Config, pool *pgxpool.Pool, crypto *cryptoutil.CredentialCrypto) *Provider {
+func NewProvider(cfg *config.Config, pool *sql.DB, crypto *cryptoutil.CredentialCrypto) *Provider {
 	return &Provider{client: NewClient(cfg), pool: pool, crypto: crypto}
 }
 
@@ -371,8 +370,7 @@ func (p *Provider) fetchAllTorrents(accountID, queryType string) ([]domain.Track
 
 func (p *Provider) getDecryptedAPIKey(accountID string) (string, error) {
 	var enc, iv, tag string
-	err := p.pool.QueryRow(context.Background(),
-		`SELECT "encryptedApiKey", "iv", "authTag" FROM "TrackerCredential" WHERE "accountId"=$1`, accountID,
+	err := p.pool.QueryRow(`SELECT encryptedApiKey, iv, authTag FROM TrackerCredential WHERE accountId=?`, accountID,
 	).Scan(&enc, &iv, &tag)
 	if err != nil {
 		return "", fmt.Errorf("credential not found for account %s: %w", accountID, err)
@@ -383,8 +381,7 @@ func (p *Provider) getDecryptedAPIKey(accountID string) (string, error) {
 // resolveUID DB 已有则直接用；否则拉 profile 引导获取并回写
 func (p *Provider) resolveUID(accountID, apiKey string) (int, error) {
 	var externalID *string
-	err := p.pool.QueryRow(context.Background(),
-		`SELECT "externalUserId" FROM "TrackerAccount" WHERE "id"=$1`, accountID).Scan(&externalID)
+	err := p.pool.QueryRow(`SELECT externalUserId FROM TrackerAccount WHERE id=?`, accountID).Scan(&externalID)
 	if err != nil {
 		return 0, err
 	}
@@ -403,14 +400,12 @@ func (p *Provider) resolveUID(accountID, apiKey string) (int, error) {
 // syncExternalUserID 将 profile 的 member.id 回写 DB（若变化），返回数字 uid
 func (p *Provider) syncExternalUserID(accountID, externalID string) (int, error) {
 	var current *string
-	err := p.pool.QueryRow(context.Background(),
-		`SELECT "externalUserId" FROM "TrackerAccount" WHERE "id"=$1`, accountID).Scan(&current)
+	err := p.pool.QueryRow(`SELECT externalUserId FROM TrackerAccount WHERE id=?`, accountID).Scan(&current)
 	if err != nil {
 		return 0, err
 	}
 	if current == nil || *current != externalID {
-		_, err = p.pool.Exec(context.Background(),
-			`UPDATE "TrackerAccount" SET "externalUserId"=$1, "updatedAt"=NOW() WHERE "id"=$2`, externalID, accountID)
+		_, err = p.pool.Exec(`UPDATE TrackerAccount SET externalUserId=?, updatedAt=NOW() WHERE id=?`, externalID, accountID)
 		if err != nil {
 			return 0, err
 		}

@@ -26,6 +26,7 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/settings"
 	"github.com/1443205008/ptmanager-go/internal/syncer"
 	"github.com/1443205008/ptmanager-go/internal/torrents"
+	"github.com/1443205008/ptmanager-go/internal/web"
 
 	"github.com/gin-gonic/gin"
 )
@@ -148,6 +149,9 @@ func main() {
 		st.GET("/status", settings.StatusHandler(settingsSvc))
 		st.POST("/cleanup", settings.CleanupHandler(settingsSvc))
 	}
+
+	// 静态前端（go:embed）
+	web.Register(r, "/api")
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),

@@ -3,6 +3,8 @@
 package fakeseed
 
 import (
+	"log"
+	"database/sql"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -23,12 +25,10 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/providers"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	registry *providers.Registry
 	cfg      *config.Config
 
@@ -36,7 +36,7 @@ type Service struct {
 	sessions map[string]*session // jobID → session
 }
 
-func NewService(pool *pgxpool.Pool, registry *providers.Registry, cfg *config.Config) *Service {
+func NewService(pool *sql.DB, registry *providers.Registry, cfg *config.Config) *Service {
 	return &Service{pool: pool, registry: registry, cfg: cfg, sessions: map[string]*session{}}
 }
 
@@ -82,24 +82,24 @@ type jobRow struct {
 }
 
 const jobSelect = `
-SELECT f."id", f."accountId", f."torrentId", f."torrentName", f."infoHash", f."trackerUrl",
-       f."totalSize", f."peerId", f."peerKey", f."port", f."interval", f."status",
-       f."lastReportAt", f."nextReportAt", f."errorMessage", f."createdAt",
-       a."accountName", s."code", s."name"
-FROM "FakeSeedJob" f
-LEFT JOIN "TrackerAccount" a ON a."id" = f."accountId"
-LEFT JOIN "TrackerSite" s ON s."id" = a."siteId"`
+SELECT f.id, f.accountId, f.torrentId, f.torrentName, f.infoHash, f.trackerUrl,
+       f.totalSize, f.peerId, f.peerKey, f.port, f.interval, f.status,
+       f.lastReportAt, f.nextReportAt, f.errorMessage, f.createdAt,
+       a.accountName, s.code, s.name
+FROM FakeSeedJob f
+LEFT JOIN TrackerAccount a ON a.id = f.accountId
+LEFT JOIN TrackerSite s ON s.id = a.siteId`
 
 func (s *Service) getJob(ctx context.Context, id string) (*jobRow, error) {
 	var r jobRow
-	err := s.pool.QueryRow(ctx, jobSelect+` WHERE f."id"=$1`, id).Scan(
+	err := s.pool.QueryRow(jobSelect+" WHERE f.id=?", id).Scan(
 		&r.id, &r.accountID, &r.torrentID, &r.torrentName, &r.infoHash, &r.trackerURL,
 		&r.totalSize, &r.peerID, &r.peerKey, &r.port, &r.interval, &r.status,
 		&r.lastReportAt, &r.nextReportAt, &r.errorMessage, &r.createdAt,
 		&r.accountName, &r.siteCode, &r.siteName)
 
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return nil, &apiErr{http.StatusNotFound, "保种任务不存在"}
 		}
 		return nil, err
@@ -138,10 +138,10 @@ func (s *Service) StartByTorrentID(accountID, torrentID, torrentName string) (Fa
 
 	// 已存在则复启
 	var existingID string
-	err := s.pool.QueryRow(ctx, `SELECT "id" FROM "FakeSeedJob" WHERE "torrentId"=$1 AND "accountId"=$2`, torrentID, accountID).Scan(&existingID)
+	err := s.pool.QueryRow(`SELECT id FROM FakeSeedJob WHERE torrentId=? AND accountId=?`, torrentID, accountID).Scan(&existingID)
 	if err == nil {
 		var status string
-		_ = s.pool.QueryRow(ctx, `SELECT "status" FROM "FakeSeedJob" WHERE "id"=$1`, existingID).Scan(&status)
+		_ = s.pool.QueryRow(`SELECT status FROM FakeSeedJob WHERE id=?`, existingID).Scan(&status)
 		if status == "RUNNING" {
 			return FakeSeedJobResponse{}, &apiErr{http.StatusConflict, "该种子已在保种中"}
 		}
@@ -154,7 +154,7 @@ func (s *Service) StartByTorrentID(accountID, torrentID, torrentName string) (Fa
 		}
 		return job.toResponse(), nil
 	}
-	if err != pgx.ErrNoRows {
+	if err != sql.ErrNoRows {
 		return FakeSeedJobResponse{}, err
 	}
 
@@ -180,10 +180,10 @@ func (s *Service) StartByTorrentID(accountID, torrentID, torrentName string) (Fa
 	}
 
 	jobID := db.NewID()
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO "FakeSeedJob"("id","accountId","torrentId","torrentName","infoHash","trackerUrl",
-			"totalSize","peerId","peerKey","port","status","interval","createdAt","updatedAt")
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,34567,'STOPPED',300,NOW(),NOW())`,
+	_, err = s.pool.Exec(`
+		INSERT INTO FakeSeedJob(id,accountId,torrentId,torrentName,infoHash,trackerUrl,
+			totalSize,peerId,peerKey,port,status,interval,createdAt,updatedAt)
+		VALUES(?,?,?,?,?,?,?,?,?,34567,'STOPPED',300,NOW(),NOW())`,
 		jobID, accountID, torrentID, torrentName, parsed.infoHash, parsed.trackerURL,
 		parsed.totalSize, genPeerID(), genKey())
 	if err != nil {
@@ -202,11 +202,11 @@ func (s *Service) StartByTorrentID(accountID, torrentID, torrentName string) (Fa
 // downloadTorrentFile 用 provider 拿下载 token 再下载 .torrent
 func (s *Service) downloadTorrentFile(ctx context.Context, accountID, torrentID string) ([]byte, error) {
 	var siteCode string
-	err := s.pool.QueryRow(ctx, `
-		SELECT s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId"
-		WHERE a."id"=$1 AND a."isEnabled"=true`, accountID).Scan(&siteCode)
+	err := s.pool.QueryRow(`
+		SELECT s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId
+		WHERE a.id=? AND a.isEnabled=true`, accountID).Scan(&siteCode)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return nil, &apiErr{http.StatusNotFound, "账户不存在或未启用"}
 		}
 		return nil, err
@@ -436,8 +436,7 @@ func (s *Service) sendAnnounce(job *jobRow, event string) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	if newInterval, ok := parseTrackerInterval(body); ok {
-		if _, err := s.pool.Exec(context.Background(),
-			`UPDATE "FakeSeedJob" SET "interval"=$1, "updatedAt"=NOW() WHERE "id"=$2`, newInterval, job.id); err == nil {
+		if _, err := s.pool.Exec(`UPDATE FakeSeedJob SET interval=?, updatedAt=NOW() WHERE id=?`, newInterval, job.id); err == nil {
 			s.mu.Lock()
 			if sess, ok := s.sessions[job.id]; ok && sess.interval != newInterval {
 				sess.interval = newInterval
@@ -452,15 +451,14 @@ func (s *Service) sendAnnounce(job *jobRow, event string) error {
 func (s *Service) startSession(job *jobRow) error {
 	s.stopSession(job.id)
 	now := time.Now()
-	_, err := s.pool.Exec(context.Background(), `
-		UPDATE "FakeSeedJob" SET "status"='RUNNING', "lastReportAt"=$1, "nextReportAt"=$2, "errorMessage"=NULL, "updatedAt"=NOW()
-		WHERE "id"=$3`, now, now.Add(time.Duration(job.interval)*time.Second), job.id)
+	_, err := s.pool.Exec(`
+		UPDATE FakeSeedJob SET status='RUNNING', lastReportAt=?, nextReportAt=?, errorMessage=NULL, updatedAt=NOW()
+		WHERE id=?`, now, now.Add(time.Duration(job.interval)*time.Second), job.id)
 	if err != nil {
 		return err
 	}
 	if err := s.sendAnnounce(job, "started"); err != nil {
-		_, _ = s.pool.Exec(context.Background(),
-			`UPDATE "FakeSeedJob" SET "status"='ERROR', "errorMessage"=$1, "updatedAt"=NOW() WHERE "id"=$2`, err.Error(), job.id)
+		_, _ = s.pool.Exec(`UPDATE FakeSeedJob SET status='ERROR', errorMessage=?, updatedAt=NOW() WHERE id=?`, err.Error(), job.id)
 		return &apiErr{http.StatusServiceUnavailable, "保种启动失败：" + err.Error()}
 	}
 	s.scheduleTimer(job.id, job.interval)
@@ -493,12 +491,11 @@ func (s *Service) scheduleTimer(jobID string, interval int) {
 				return
 			}
 			now := time.Now()
-			_, _ = s.pool.Exec(ctx, `
-				UPDATE "FakeSeedJob" SET "lastReportAt"=$1, "nextReportAt"=$2, "updatedAt"=NOW() WHERE "id"=$3`,
+			_, _ = s.pool.Exec(`
+				UPDATE FakeSeedJob SET lastReportAt=?, nextReportAt=?, updatedAt=NOW() WHERE id=?`,
 				now, now.Add(time.Duration(job.interval)*time.Second), jobID)
 			if err := s.sendAnnounce(job, ""); err != nil {
-				_, _ = s.pool.Exec(ctx,
-					`UPDATE "FakeSeedJob" SET "status"='ERROR', "errorMessage"=$1, "updatedAt"=NOW() WHERE "id"=$2`, err.Error(), jobID)
+				_, _ = s.pool.Exec(`UPDATE FakeSeedJob SET status='ERROR', errorMessage=?, updatedAt=NOW() WHERE id=?`, err.Error(), jobID)
 				s.stopSession(jobID)
 				return
 			}
@@ -531,7 +528,7 @@ func (s *Service) Stop(id string) (map[string]string, error) {
 	}
 	s.stopSession(id)
 	_ = s.sendAnnounce(job, "stopped")
-	_, err = s.pool.Exec(ctx, `UPDATE "FakeSeedJob" SET "status"='STOPPED', "nextReportAt"=NULL, "updatedAt"=NOW() WHERE "id"=$1`, id)
+	_, err = s.pool.Exec(`UPDATE FakeSeedJob SET status='STOPPED', nextReportAt=NULL, updatedAt=NOW() WHERE id=?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +537,7 @@ func (s *Service) Stop(id string) (map[string]string, error) {
 
 func (s *Service) Remove(id string) (map[string]string, error) {
 	s.stopSession(id)
-	_, err := s.pool.Exec(context.Background(), `DELETE FROM "FakeSeedJob" WHERE "id"=$1`, id)
+	_, err := s.pool.Exec(`DELETE FROM FakeSeedJob WHERE id=?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -548,15 +545,14 @@ func (s *Service) Remove(id string) (map[string]string, error) {
 }
 
 func (s *Service) List(accountID string) ([]FakeSeedJobResponse, error) {
-	ctx := context.Background()
 	q := jobSelect
 	var args []interface{}
 	if accountID != "" {
 		args = append(args, accountID)
-		q += ` WHERE f."accountId"=$1`
+		q += " WHERE f.accountId=?"
 	}
-	q += ` ORDER BY f."createdAt" DESC`
-	rows, err := s.pool.Query(ctx, q, args...)
+	q += " ORDER BY f.createdAt DESC"
+	rows, err := s.pool.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -579,9 +575,9 @@ func (s *Service) List(accountID string) ([]FakeSeedJobResponse, error) {
 }
 
 // RestoreRunning 服务启动时恢复 RUNNING 任务（避免重启后丢失）
-func RestoreRunning(pool *pgxpool.Pool, svc *Service) {
+func RestoreRunning(pool *sql.DB, svc *Service) {
 	ctx := context.Background()
-	rows, err := pool.Query(ctx, `SELECT "id" FROM "FakeSeedJob" WHERE "status"='RUNNING'`)
+	rows, err := pool.Query(`SELECT id FROM FakeSeedJob WHERE status='RUNNING'`)
 	if err != nil {
 		return
 	}
@@ -598,7 +594,7 @@ func RestoreRunning(pool *pgxpool.Pool, svc *Service) {
 	fmt.Printf("[保种] 恢复 %d 个中断的保种任务…\n", len(ids))
 	restored := 0
 	for _, id := range ids {
-		_, _ = pool.Exec(ctx, `UPDATE "FakeSeedJob" SET "status"='STOPPED' WHERE "id"=$1`, id)
+		_, _ = pool.Exec(`UPDATE FakeSeedJob SET status='STOPPED' WHERE id=?`, id)
 		job, err := svc.getJob(ctx, id)
 		if err != nil {
 			continue
@@ -651,6 +647,7 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(ae.status, gin.H{"statusCode": ae.status, "message": ae.message})
 		return
 	}
+	log.Printf("[http] 500 on %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 

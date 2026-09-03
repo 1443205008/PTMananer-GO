@@ -1,4 +1,12 @@
-# 多阶段构建：编译 + 运行时镜像
+# 阶段 0：前端（可选——本仓库已提交构建产物 internal/web/frontend/，无前端源码时可跳过）
+# 如需重建前端：把 TS 仓库放到 ../PTMananer，取消下面注释
+# FROM node:20-alpine AS frontend
+# RUN corepack enable
+# COPY PTMananer/apps/frontend /app
+# WORKDIR /app
+# RUN pnpm install && NEXT_PUBLIC_API_BASE_URL=/api pnpm build
+
+# ── 阶段 1：Go 编译 ─────────────────────────────────────────
 FROM golang:1.25-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
@@ -10,7 +18,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /ptmanager ./cmd/server
 
-# ── 运行时 ─────────────────────────────────────────────────────────────
+# ── 阶段 2：运行时 ──────────────────────────────────────────
 FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata && \
@@ -24,5 +32,4 @@ ENV BACKEND_PORT=4000 \
 
 EXPOSE 4000
 
-# 启动前先跑迁移和 seed（RUN_SEED=true 需要 SEED_ADMIN_PASSWORD）
 ENTRYPOINT ["ptmanager"]

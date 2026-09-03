@@ -2,7 +2,7 @@
 package dashboard
 
 import (
-	"context"
+	"database/sql"
 	"net/http"
 	"strconv"
 	"time"
@@ -10,15 +10,14 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/accounts"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	accounts *accounts.Service
 }
 
-func NewService(pool *pgxpool.Pool, acc *accounts.Service) *Service {
+func NewService(pool *sql.DB, acc *accounts.Service) *Service {
 	return &Service{pool: pool, accounts: acc}
 }
 
@@ -132,17 +131,16 @@ func round4(f float64) float64 { return float64(int64(f*10000+0.5)) / 10000 }
 func round2(f float64) float64 { return float64(int64(f*100+0.5)) / 100 }
 
 func (s *Service) buildTrend(days int) ([]TrendPoint, error) {
-	ctx := context.Background()
 	since := time.Now().UTC().AddDate(0, 0, -days)
 	since = time.Date(since.Year(), since.Month(), since.Day(), 0, 0, 0, 0, time.UTC)
-	rows, err := s.pool.Query(ctx, `
-		SELECT "snapshotDate",
-		       COALESCE(SUM("uploadBytes"),0), COALESCE(SUM("downloadBytes"),0),
-		       COALESCE(SUM("bonus"),0), COALESCE(SUM("seedingCount"),0)
-		FROM "TrackerDailySnapshot"
-		WHERE "snapshotDate" >= $1
-		GROUP BY "snapshotDate"
-		ORDER BY "snapshotDate" ASC`, since)
+	rows, err := s.pool.Query(`
+		SELECT snapshotDate,
+		       COALESCE(SUM(uploadBytes),0), COALESCE(SUM(downloadBytes),0),
+		       COALESCE(SUM(bonus),0), COALESCE(SUM(seedingCount),0)
+		FROM TrackerDailySnapshot
+		WHERE snapshotDate >= ?
+		GROUP BY snapshotDate
+		ORDER BY snapshotDate ASC`, since)
 	if err != nil {
 		return nil, err
 	}

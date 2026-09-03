@@ -2,8 +2,9 @@
 package accounts
 
 import (
+	"log"
+	"database/sql"
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -14,17 +15,15 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/providers"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	pool    *pgxpool.Pool
+	pool    *sql.DB
 	crypto  *cryptoutil.CredentialCrypto
 	registry *providers.Registry
 }
 
-func NewService(pool *pgxpool.Pool, crypto *cryptoutil.CredentialCrypto, registry *providers.Registry) *Service {
+func NewService(pool *sql.DB, crypto *cryptoutil.CredentialCrypto, registry *providers.Registry) *Service {
 	return &Service{pool: pool, crypto: crypto, registry: registry}
 }
 
@@ -105,21 +104,21 @@ type accountRow struct {
 }
 
 const accountSelect = `
-SELECT a."id", s."code", s."name", a."accountName", a."remark", a."externalUserId",
-       a."username", a."avatarUrl", a."joinedAt", a."isEnabled", a."syncEnabled",
-       a."status", a."lastSyncAt", a."createdAt", a."updatedAt",
-       (t."id" IS NOT NULL) AS has_stats,
-       COALESCE(t."uploadBytes",0), COALESCE(t."downloadBytes",0), COALESCE(t."seedingBytes",0),
-       COALESCE(t."ratio",0), COALESCE(t."bonus",0),
-       COALESCE(t."seedingCount",0), COALESCE(t."leechingCount",0), COALESCE(t."hitAndRunCount",0),
-       t."roleId", t."levelName", COALESCE(t."isWarned",false), COALESCE(t."isVip",false), COALESCE(t."isDonor",false),
-       t."lastLoginAt", t."lastTrackerAt", t."syncedAt",
-       COALESCE(t."siteStatus",'UNKNOWN'), t."bonusHourlyRate"
-FROM "TrackerAccount" a
-JOIN "TrackerSite" s ON s."id" = a."siteId"
-LEFT JOIN "TrackerStats" t ON t."accountId" = a."id"`
+SELECT a.id, s.code, s.name, a.accountName, a.remark, a.externalUserId,
+       a.username, a.avatarUrl, a.joinedAt, a.isEnabled, a.syncEnabled,
+       a.status, a.lastSyncAt, a.createdAt, a.updatedAt,
+       (t.id IS NOT NULL) AS has_stats,
+       COALESCE(t.uploadBytes,0), COALESCE(t.downloadBytes,0), COALESCE(t.seedingBytes,0),
+       COALESCE(t.ratio,0), COALESCE(t.bonus,0),
+       COALESCE(t.seedingCount,0), COALESCE(t.leechingCount,0), COALESCE(t.hitAndRunCount,0),
+       t.roleId, t.levelName, COALESCE(t.isWarned,false), COALESCE(t.isVip,false), COALESCE(t.isDonor,false),
+       t.lastLoginAt, t.lastTrackerAt, t.syncedAt,
+       COALESCE(t.siteStatus,'UNKNOWN'), t.bonusHourlyRate
+FROM TrackerAccount a
+JOIN TrackerSite s ON s.id = a.siteId
+LEFT JOIN TrackerStats t ON t.accountId = a.id`
 
-func scanAccount(row pgx.Row) (*accountRow, error) {
+func scanAccount(row interface{ Scan(dest ...interface{}) error }) (*accountRow, error) {
 	var r accountRow
 	err := row.Scan(&r.id, &r.siteCode, &r.siteName, &r.accountName, &r.remark, &r.externalUserID,
 		&r.username, &r.avatarURL, &r.joinedAt, &r.isEnabled, &r.syncEnabled,
@@ -229,28 +228,28 @@ func (s *Service) Create(dto createDTO) (AccountResponse, error) {
 	}
 
 	accountID := db.NewID()
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.pool.Begin()
 	if err != nil {
 		return AccountResponse{}, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now()
-	_, err = tx.Exec(ctx, `
-		INSERT INTO "TrackerAccount"("id","userId","siteId","accountName","remark","isEnabled","syncEnabled","status","createdAt","updatedAt")
-		VALUES($1,$2,$3,$4,$5,true,true,'ACTIVE',$6,$6)`,
-		accountID, userID, siteID, dto.AccountName, dto.Remark, now)
+	_, err = tx.Exec(`
+		INSERT INTO TrackerAccount(id,userId,siteId,accountName,remark,isEnabled,syncEnabled,status,createdAt,updatedAt)
+		VALUES(?,?,?,?,?,true,true,'ACTIVE',?,?)`,
+		accountID, userID, siteID, dto.AccountName, dto.Remark, now, now)
 	if err != nil {
 		return AccountResponse{}, err
 	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO "TrackerCredential"("id","accountId","encryptedApiKey","iv","authTag","createdAt","updatedAt")
-		VALUES($1,$2,$3,$4,$5,$6,$6)`,
-		db.NewID(), accountID, enc.EncryptedAPIKey, enc.IV, enc.AuthTag, now)
+	_, err = tx.Exec(`
+		INSERT INTO TrackerCredential(id,accountId,encryptedApiKey,iv,authTag,createdAt,updatedAt)
+		VALUES(?,?,?,?,?,?,?)`,
+		db.NewID(), accountID, enc.EncryptedAPIKey, enc.IV, enc.AuthTag, now, now)
 	if err != nil {
 		return AccountResponse{}, err
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		return AccountResponse{}, err
 	}
 	return s.GetOne(accountID)
@@ -259,9 +258,9 @@ func (s *Service) Create(dto createDTO) (AccountResponse, error) {
 func (s *Service) resolveSite(ctx context.Context, code string) (string, bool, error) {
 	var id string
 	var enabled bool
-	err := s.pool.QueryRow(ctx, `SELECT "id","isEnabled" FROM "TrackerSite" WHERE "code"=$1`, code).Scan(&id, &enabled)
+	err := s.pool.QueryRow(`SELECT id,isEnabled FROM TrackerSite WHERE code=?`, code).Scan(&id, &enabled)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return "", false, &apiErr{http.StatusBadRequest, "Site " + code + " is not registered. Run seed to initialize sites."}
 		}
 		return "", false, err
@@ -277,9 +276,9 @@ func (s *Service) resolveSite(ctx context.Context, code string) (string, bool, e
 
 func (s *Service) resolveDefaultUser(ctx context.Context) (string, error) {
 	var id string
-	err := s.pool.QueryRow(ctx, `SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1`).Scan(&id)
+	err := s.pool.QueryRow(`SELECT id FROM User ORDER BY createdAt ASC LIMIT 1`).Scan(&id)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return "", &apiErr{http.StatusBadRequest, "No system user found. Run seed to initialize the default user."}
 		}
 		return "", err
@@ -288,7 +287,7 @@ func (s *Service) resolveDefaultUser(ctx context.Context) (string, error) {
 }
 
 func (s *Service) ListAll() ([]AccountResponse, error) {
-	rows, err := s.pool.Query(context.Background(), accountSelect+` ORDER BY a."createdAt" DESC`)
+	rows, err := s.pool.Query(accountSelect + " ORDER BY a.createdAt DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -305,9 +304,9 @@ func (s *Service) ListAll() ([]AccountResponse, error) {
 }
 
 func (s *Service) GetOne(id string) (AccountResponse, error) {
-	r, err := scanAccount(s.pool.QueryRow(context.Background(), accountSelect+` WHERE a."id"=$1`, id))
+	r, err := scanAccount(s.pool.QueryRow(accountSelect+" WHERE a.id=?", id))
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return AccountResponse{}, &apiErr{http.StatusNotFound, "Tracker account " + id + " not found"}
 		}
 		return AccountResponse{}, err
@@ -316,7 +315,6 @@ func (s *Service) GetOne(id string) (AccountResponse, error) {
 }
 
 func (s *Service) Update(id string, dto updateDTO) (AccountResponse, error) {
-	ctx := context.Background()
 	if _, err := s.GetOne(id); err != nil {
 		return AccountResponse{}, err
 	}
@@ -327,37 +325,37 @@ func (s *Service) Update(id string, dto updateDTO) (AccountResponse, error) {
 		if err != nil {
 			return AccountResponse{}, err
 		}
-		_, err = s.pool.Exec(ctx, `
-			INSERT INTO "TrackerCredential"("id","accountId","encryptedApiKey","iv","authTag","createdAt","updatedAt")
-			VALUES($1,$2,$3,$4,$5,$6,$6)
-			ON CONFLICT ("accountId") DO UPDATE SET "encryptedApiKey"=$3,"iv"=$4,"authTag"=$5,"updatedAt"=$6`,
+		_, err = s.pool.Exec(`
+			INSERT INTO TrackerCredential(id,accountId,encryptedApiKey,iv,authTag,createdAt,updatedAt)
+			VALUES(?,?,?,?,?,?,?)
+			ON DUPLICATE KEY UPDATE encryptedApiKey=VALUES(encryptedApiKey),iv=VALUES(iv),authTag=VALUES(authTag),updatedAt=NOW(3)`,
 			db.NewID(), id, enc.EncryptedAPIKey, enc.IV, enc.AuthTag, time.Now())
 		if err != nil {
 			return AccountResponse{}, err
 		}
 	}
 
-	sets := []string{`"updatedAt"=NOW()`}
+	sets := []string{"updatedAt=NOW(3)"}
 	args := []interface{}{}
 	if dto.AccountName != nil && *dto.AccountName != "" {
 		args = append(args, *dto.AccountName)
-		sets = append(sets, fmt.Sprintf(`"accountName"=$%d`, len(args)))
+		sets = append(sets, "accountName=?")
 	}
 	if dto.Remark != nil {
 		args = append(args, *dto.Remark)
-		sets = append(sets, fmt.Sprintf(`"remark"=$%d`, len(args)))
+		sets = append(sets, "remark=?")
 	}
 	if dto.IsEnabled != nil {
 		args = append(args, *dto.IsEnabled)
-		sets = append(sets, fmt.Sprintf(`"isEnabled"=$%d`, len(args)))
+		sets = append(sets, "isEnabled=?")
 	}
 	if dto.SyncEnabled != nil {
 		args = append(args, *dto.SyncEnabled)
-		sets = append(sets, fmt.Sprintf(`"syncEnabled"=$%d`, len(args)))
+		sets = append(sets, "syncEnabled=?")
 	}
 	args = append(args, id)
-	q := `UPDATE "TrackerAccount" SET ` + joinStrings(sets, ", ") + ` WHERE "id"=$` + fmtInt(int64(len(args)))
-	_, err := s.pool.Exec(ctx, q, args...)
+	q := "UPDATE TrackerAccount SET " + joinStrings(sets, ", ") + " WHERE id=?"
+	_, err := s.pool.Exec(q, args...)
 	if err != nil {
 		return AccountResponse{}, err
 	}
@@ -368,7 +366,7 @@ func (s *Service) Remove(id string) (map[string]string, error) {
 	if _, err := s.GetOne(id); err != nil {
 		return nil, err
 	}
-	_, err := s.pool.Exec(context.Background(), `DELETE FROM "TrackerAccount" WHERE "id"=$1`, id)
+	_, err := s.pool.Exec(`DELETE FROM TrackerAccount WHERE id=?`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -377,10 +375,9 @@ func (s *Service) Remove(id string) (map[string]string, error) {
 
 func (s *Service) TestConnection(id string) (domain.ConnectionResult, error) {
 	var siteCode string
-	err := s.pool.QueryRow(context.Background(),
-		`SELECT s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId" WHERE a."id"=$1`, id).Scan(&siteCode)
+	err := s.pool.QueryRow(`SELECT s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId WHERE a.id=?`, id).Scan(&siteCode)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return domain.ConnectionResult{}, &apiErr{http.StatusNotFound, "Tracker account " + id + " not found"}
 		}
 		return domain.ConnectionResult{}, err
@@ -406,6 +403,7 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(ae.status, gin.H{"statusCode": ae.status, "message": ae.message})
 		return
 	}
+	log.Printf("[http] 500 on %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 

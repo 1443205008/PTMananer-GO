@@ -2,6 +2,7 @@
 package syncer
 
 import (
+	"database/sql"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/domain"
 	"github.com/1443205008/ptmanager-go/internal/providers"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -121,13 +121,13 @@ func (q *Queue) process(ctx context.Context, job Job) {
 // ─── Scheduler：定时入队 ──────────────────────────────────────────────────
 
 type Scheduler struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	queue    *Queue
 	settings SettingsService
 	stop     chan struct{}
 }
 
-func NewScheduler(pool *pgxpool.Pool, queue *Queue, settings SettingsService) *Scheduler {
+func NewScheduler(pool *sql.DB, queue *Queue, settings SettingsService) *Scheduler {
 	return &Scheduler{pool: pool, queue: queue, settings: settings, stop: make(chan struct{})}
 }
 
@@ -167,9 +167,9 @@ func (s *Scheduler) Run(ctx context.Context) {
 }
 
 func (s *Scheduler) scheduleAccountSyncs(ctx context.Context) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT "id" FROM "TrackerAccount"
-		WHERE "isEnabled"=true AND "syncEnabled"=true AND "status" != 'CREDENTIAL_INVALID'`)
+	rows, err := s.pool.Query(`
+		SELECT id FROM TrackerAccount
+		WHERE isEnabled=true AND syncEnabled=true AND status != 'CREDENTIAL_INVALID'`)
 	if err != nil {
 		log.Printf("[scheduler] query accounts: %v", err)
 		return
@@ -195,12 +195,12 @@ func (s *Scheduler) scheduleAccountSyncs(ctx context.Context) {
 // ─── 同步业务 ──────────────────────────────────────────────────────────────
 
 type Service struct {
-	pool     *pgxpool.Pool
+	pool     *sql.DB
 	registry *providers.Registry
 	settings SettingsService
 }
 
-func NewService(pool *pgxpool.Pool, registry *providers.Registry, settings SettingsService) *Service {
+func NewService(pool *sql.DB, registry *providers.Registry, settings SettingsService) *Service {
 	return &Service{pool: pool, registry: registry, settings: settings}
 }
 
@@ -216,7 +216,7 @@ func (s *Service) SyncAccountStats(accountID string) error {
 	ctx := context.Background()
 
 	var siteCode string
-	err := s.pool.QueryRow(ctx, `SELECT s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId" WHERE a."id"=$1`, accountID).Scan(&siteCode)
+	err := s.pool.QueryRow(`SELECT s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId WHERE a.id=?`, accountID).Scan(&siteCode)
 	if err != nil {
 		log.Printf("[sync] account %s not found, skipping", accountID)
 		return nil
@@ -228,9 +228,9 @@ func (s *Service) SyncAccountStats(accountID string) error {
 
 	jobID := db.NewID()
 	start := time.Now()
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO "SyncJob"("id","accountId","type","status","startedAt","createdAt","updatedAt")
-		VALUES($1,$2,'STATS_SYNC','RUNNING',$3,$3,$3)`, jobID, accountID, start)
+	_, err = s.pool.Exec(`
+		INSERT INTO SyncJob(id,accountId,type,status,startedAt,createdAt,updatedAt)
+		VALUES(?,?,'STATS_SYNC','RUNNING',?,?,?)`, jobID, accountID, start, start, start)
 	if err != nil {
 		return err
 	}
@@ -245,9 +245,9 @@ func (s *Service) SyncAccountStats(accountID string) error {
 	if err != nil {
 		return fail(err)
 	}
-	if _, err := s.pool.Exec(ctx, `
-		UPDATE "TrackerAccount" SET "externalUserId"=$1, "username"=$2, "avatarUrl"=$3, "joinedAt"=$4, "updatedAt"=NOW()
-		WHERE "id"=$5`,
+	if _, err := s.pool.Exec(`
+		UPDATE TrackerAccount SET externalUserId=?, username=?, avatarUrl=?, joinedAt=?, updatedAt=NOW()
+		WHERE id=?`,
 		profile.ExternalUserID, profile.Username, nilIfEmpty(profile.AvatarURL), profile.JoinedAt, accountID); err != nil {
 		return fail(err)
 	}
@@ -257,16 +257,18 @@ func (s *Service) SyncAccountStats(accountID string) error {
 	if err != nil {
 		return fail(err)
 	}
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO "TrackerStats"("id","accountId","uploadBytes","downloadBytes","ratio","bonus",
-			"seedingCount","seedingBytes","leechingCount","hitAndRunCount","roleId","levelName",
-			"isWarned","isVip","isDonor","lastLoginAt","lastTrackerAt","siteStatus","syncedAt","bonusHourlyRate","createdAt","updatedAt")
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,'HEALTHY',$18,$19,NOW(),NOW())
-		ON CONFLICT ("accountId") DO UPDATE SET
-			"uploadBytes"=$3,"downloadBytes"=$4,"ratio"=$5,"bonus"=$6,"seedingCount"=$7,"seedingBytes"=$8,
-			"leechingCount"=$9,"hitAndRunCount"=$10,"roleId"=$11,"levelName"=$12,"isWarned"=$13,"isVip"=$14,
-			"isDonor"=$15,"lastLoginAt"=$16,"lastTrackerAt"=$17,"siteStatus"='HEALTHY',"syncedAt"=$18,
-			"bonusHourlyRate"=$19,"updatedAt"=NOW()`,
+	_, err = s.pool.Exec(`
+		INSERT INTO TrackerStats(id,accountId,uploadBytes,downloadBytes,ratio,bonus,
+			seedingCount,seedingBytes,leechingCount,hitAndRunCount,roleId,levelName,
+			isWarned,isVip,isDonor,lastLoginAt,lastTrackerAt,siteStatus,syncedAt,bonusHourlyRate,createdAt,updatedAt)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'HEALTHY',?,?,NOW(),NOW())
+		ON DUPLICATE KEY UPDATE
+			uploadBytes=VALUES(uploadBytes),downloadBytes=VALUES(downloadBytes),ratio=VALUES(ratio),
+			bonus=VALUES(bonus),seedingCount=VALUES(seedingCount),seedingBytes=VALUES(seedingBytes),
+			leechingCount=VALUES(leechingCount),hitAndRunCount=VALUES(hitAndRunCount),roleId=VALUES(roleId),
+			levelName=VALUES(levelName),isWarned=VALUES(isWarned),isVip=VALUES(isVip),
+			isDonor=VALUES(isDonor),lastLoginAt=VALUES(lastLoginAt),lastTrackerAt=VALUES(lastTrackerAt),
+			siteStatus='HEALTHY',syncedAt=VALUES(syncedAt),bonusHourlyRate=VALUES(bonusHourlyRate),updatedAt=NOW(3)`,
 		db.NewID(), accountID, stats.UploadBytes, stats.DownloadBytes, stats.Ratio, stats.Bonus,
 		stats.SeedingCount, stats.SeedingBytes, stats.LeechingCount, stats.HitAndRunCount,
 		roleIDOrNull(profile.RoleID), nilIfEmptyStr(profile.LevelName),
@@ -282,8 +284,8 @@ func (s *Service) SyncAccountStats(accountID string) error {
 	}
 
 	// 4. 标记 ACTIVE
-	if _, err := s.pool.Exec(ctx, `
-		UPDATE "TrackerAccount" SET "status"='ACTIVE', "lastSyncAt"=NOW(), "updatedAt"=NOW() WHERE "id"=$1`, accountID); err != nil {
+	if _, err := s.pool.Exec(`
+		UPDATE TrackerAccount SET status='ACTIVE', lastSyncAt=NOW(), updatedAt=NOW() WHERE id=?`, accountID); err != nil {
 		return fail(err)
 	}
 
@@ -295,13 +297,14 @@ func (s *Service) SyncAccountStats(accountID string) error {
 func (s *Service) upsertDailySnapshot(ctx context.Context, accountID string, stats domain.TrackerStats) error {
 	now := time.Now().UTC()
 	snapshotDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO "TrackerDailySnapshot"("id","accountId","snapshotDate","uploadBytes","downloadBytes","ratio","bonus",
-			"seedingCount","seedingBytes","leechingCount","hitAndRunCount","createdAt")
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
-		ON CONFLICT ("accountId","snapshotDate") DO UPDATE SET
-			"uploadBytes"=$4,"downloadBytes"=$5,"ratio"=$6,"bonus"=$7,"seedingCount"=$8,
-			"seedingBytes"=$9,"leechingCount"=$10,"hitAndRunCount"=$11`,
+	_, err := s.pool.Exec(`
+		INSERT INTO TrackerDailySnapshot(id,accountId,snapshotDate,uploadBytes,downloadBytes,ratio,bonus,
+			seedingCount,seedingBytes,leechingCount,hitAndRunCount,createdAt)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,NOW())
+		ON DUPLICATE KEY UPDATE
+			uploadBytes=VALUES(uploadBytes),downloadBytes=VALUES(downloadBytes),ratio=VALUES(ratio),
+			bonus=VALUES(bonus),seedingCount=VALUES(seedingCount),seedingBytes=VALUES(seedingBytes),
+			leechingCount=VALUES(leechingCount),hitAndRunCount=VALUES(hitAndRunCount)`,
 		db.NewID(), accountID, snapshotDate, stats.UploadBytes, stats.DownloadBytes, stats.Ratio, stats.Bonus,
 		stats.SeedingCount, stats.SeedingBytes, stats.LeechingCount, stats.HitAndRunCount)
 	return err
@@ -311,7 +314,7 @@ func (s *Service) upsertDailySnapshot(ctx context.Context, accountID string, sta
 func (s *Service) SyncTorrents(accountID string) error {
 	ctx := context.Background()
 	var siteCode string
-	err := s.pool.QueryRow(ctx, `SELECT s."code" FROM "TrackerAccount" a JOIN "TrackerSite" s ON s."id"=a."siteId" WHERE a."id"=$1`, accountID).Scan(&siteCode)
+	err := s.pool.QueryRow(`SELECT s.code FROM TrackerAccount a JOIN TrackerSite s ON s.id=a.siteId WHERE a.id=?`, accountID).Scan(&siteCode)
 	if err != nil {
 		log.Printf("[sync] account %s not found, skipping", accountID)
 		return nil
@@ -323,9 +326,9 @@ func (s *Service) SyncTorrents(accountID string) error {
 
 	jobID := db.NewID()
 	start := time.Now()
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO "SyncJob"("id","accountId","type","status","startedAt","createdAt","updatedAt")
-		VALUES($1,$2,'TORRENT_SYNC','RUNNING',$3,$3,$3)`, jobID, accountID, start)
+	_, err = s.pool.Exec(`
+		INSERT INTO SyncJob(id,accountId,type,status,startedAt,createdAt,updatedAt)
+		VALUES(?,?,'TORRENT_SYNC','RUNNING',?,?,?)`, jobID, accountID, start, start, start)
 	if err != nil {
 		return err
 	}
@@ -343,13 +346,15 @@ func (s *Service) SyncTorrents(accountID string) error {
 	}
 
 	for _, t := range torrents {
-		if _, err := s.pool.Exec(ctx, `
-			INSERT INTO "TrackerTorrent"("id","accountId","siteTorrentId","name","sizeBytes","status",
-				"uploadedBytes","downloadedBytes","ratio","seedTimeSecs","leechTimeSecs","completedAt","lastActivityAt","syncedAt","createdAt","updatedAt")
-			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW(),NOW())
-			ON CONFLICT ("accountId","siteTorrentId") DO UPDATE SET
-				"name"=$4,"sizeBytes"=$5,"status"=$6,"uploadedBytes"=$7,"downloadedBytes"=$8,"ratio"=$9,
-				"seedTimeSecs"=$10,"leechTimeSecs"=$11,"completedAt"=$12,"lastActivityAt"=$13,"syncedAt"=NOW(),"updatedAt"=NOW()`,
+		if _, err := s.pool.Exec(`
+			INSERT INTO TrackerTorrent(id,accountId,siteTorrentId,name,sizeBytes,status,
+				uploadedBytes,downloadedBytes,ratio,seedTimeSecs,leechTimeSecs,completedAt,lastActivityAt,syncedAt,createdAt,updatedAt)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW(),NOW())
+			ON DUPLICATE KEY UPDATE
+				name=VALUES(name),sizeBytes=VALUES(sizeBytes),status=VALUES(status),
+				uploadedBytes=VALUES(uploadedBytes),downloadedBytes=VALUES(downloadedBytes),ratio=VALUES(ratio),
+				seedTimeSecs=VALUES(seedTimeSecs),leechTimeSecs=VALUES(leechTimeSecs),
+				completedAt=VALUES(completedAt),lastActivityAt=VALUES(lastActivityAt),syncedAt=NOW(3),updatedAt=NOW(3)`,
 			db.NewID(), accountID, t.SiteTorrentID, t.Name, t.SizeBytes, string(t.Status),
 			t.UploadedBytes, t.DownloadedBytes, t.Ratio, t.SeedTimeSecs, t.LeechTimeSecs,
 			t.CompletedAt, t.LastActivityAt); err != nil {
@@ -364,8 +369,8 @@ func (s *Service) SyncTorrents(accountID string) error {
 			seedingBytes += t.SizeBytes
 		}
 	}
-	if _, err := s.pool.Exec(ctx, `
-		UPDATE "TrackerStats" SET "seedingBytes"=$1, "updatedAt"=NOW() WHERE "accountId"=$2`, seedingBytes, accountID); err != nil {
+	if _, err := s.pool.Exec(`
+		UPDATE TrackerStats SET seedingBytes=?, updatedAt=NOW() WHERE accountId=?`, seedingBytes, accountID); err != nil {
 		return fail(err)
 	}
 
@@ -375,9 +380,9 @@ func (s *Service) SyncTorrents(accountID string) error {
 }
 
 func (s *Service) finishJob(ctx context.Context, jobID string, status string, durationMs int64, records int) {
-	_, _ = s.pool.Exec(ctx, `
-		UPDATE "SyncJob" SET "status"=$1, "finishedAt"=NOW(), "durationMs"=$2, "records"=$3, "updatedAt"=NOW()
-		WHERE "id"=$4`, status, durationMs, records, jobID)
+	_, _ = s.pool.Exec(`
+		UPDATE SyncJob SET status=?, finishedAt=NOW(), durationMs=?, records=?, updatedAt=NOW()
+		WHERE id=?`, status, durationMs, records, jobID)
 }
 
 // handleSyncFailure 设置账户状态 + 记录 Job + 建告警（绝不含凭据）
@@ -410,28 +415,28 @@ func (s *Service) handleSyncFailure(ctx context.Context, accountID, jobID string
 		}
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.pool.Begin()
 	if err != nil {
 		log.Printf("[sync] failure tx: %v", err)
 		return
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() { _ = tx.Rollback() }()
 
-	_, _ = tx.Exec(ctx, `UPDATE "TrackerAccount" SET "status"=$1, "updatedAt"=NOW() WHERE "id"=$2`, accountStatus, accountID)
-	_, _ = tx.Exec(ctx, `
-		UPDATE "SyncJob" SET "status"='FAILED', "finishedAt"=NOW(), "durationMs"=$1, "errorCode"=$2, "errorMessage"=$3, "updatedAt"=NOW()
-		WHERE "id"=$4`, durationMs, string(code), safeMessage, jobID)
+	_, _ = tx.Exec(`UPDATE TrackerAccount SET status=?, updatedAt=NOW() WHERE id=?`, accountStatus, accountID)
+	_, _ = tx.Exec(`
+		UPDATE SyncJob SET status='FAILED', finishedAt=NOW(), durationMs=?, errorCode=?, errorMessage=?, updatedAt=NOW()
+		WHERE id=?`, durationMs, string(code), safeMessage, jobID)
 	if alertEnabled {
 		title := "同步失败"
 		if isAuthErr {
 			title = "API Key 失效"
 		}
-		_, _ = tx.Exec(ctx, `
-			INSERT INTO "Alert"("id","accountId","type","title","message","severity","createdAt","updatedAt")
-			VALUES($1,$2,$3,$4,$5,$6,NOW(),NOW())`,
+		_, _ = tx.Exec(`
+			INSERT INTO Alert(id,accountId,type,title,message,severity,createdAt,updatedAt)
+			VALUES(?,?,?,?,?,?,NOW(),NOW())`,
 			db.NewID(), accountID, alertType, title, safeMessage, severity)
 	}
-	if err := tx.Commit(ctx); err != nil {
+	if err := tx.Commit(); err != nil {
 		log.Printf("[sync] failure commit: %v", err)
 	}
 	log.Printf("[sync] failed for account %s: [%s] %s", accountID, code, safeMessage)

@@ -2,18 +2,17 @@
 package torrents
 
 import (
-	"context"
+	"database/sql"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Service struct{ pool *pgxpool.Pool }
+type Service struct{ pool *sql.DB }
 
-func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+func NewService(pool *sql.DB) *Service { return &Service{pool: pool} }
 
 type TorrentResponse struct {
 	ID             string  `json:"id"`
@@ -51,35 +50,33 @@ func (s *Service) FindAll(accountID, status string, page, limit int) (ListRespon
 	if limit > 100 {
 		limit = 100
 	}
-	ctx := context.Background()
-
 	where := ` WHERE 1=1`
 	args := []interface{}{}
 	if accountID != "" {
 		args = append(args, accountID)
-		where += ` AND t."accountId"=$` + strconv.Itoa(len(args))
+		where += " AND t.accountId=?"
 	}
 	if status != "" {
 		args = append(args, status)
-		where += ` AND t."status"=$` + strconv.Itoa(len(args))
+		where += " AND t.status=?"
 	}
 
 	var total int
-	if err := s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM "TrackerTorrent" t`+where, args...).Scan(&total); err != nil {
+	if err := s.pool.QueryRow(`SELECT COUNT(*) FROM TrackerTorrent t`+where, args...).Scan(&total); err != nil {
 		return ListResponse{}, err
 	}
 
 	args = append(args, limit, (page-1)*limit)
 	q := `
-		SELECT t."id", t."accountId", COALESCE(a."accountName",''), t."siteTorrentId", t."name",
-		       t."sizeBytes", t."status", t."uploadedBytes", t."downloadedBytes", t."ratio",
-		       t."seedTimeSecs", t."leechTimeSecs", t."completedAt", t."lastActivityAt", t."syncedAt", t."createdAt"
-		FROM "TrackerTorrent" t
-		JOIN "TrackerAccount" a ON a."id" = t."accountId"` + where + `
-		ORDER BY t."status" ASC, t."lastActivityAt" DESC NULLS LAST
-		LIMIT $` + strconv.Itoa(len(args)-1) + ` OFFSET $` + strconv.Itoa(len(args))
+		SELECT t.id, t.accountId, COALESCE(a.accountName,''), t.siteTorrentId, t.name,
+		       t.sizeBytes, t.status, t.uploadedBytes, t.downloadedBytes, t.ratio,
+		       t.seedTimeSecs, t.leechTimeSecs, t.completedAt, t.lastActivityAt, t.syncedAt, t.createdAt
+		FROM TrackerTorrent t
+		JOIN TrackerAccount a ON a.id = t.accountId` + where + `
+		ORDER BY t.status ASC, t.lastActivityAt DESC
+		LIMIT ? OFFSET ?`
 
-	rows, err := s.pool.Query(ctx, q, args...)
+	rows, err := s.pool.Query(q, args...)
 	if err != nil {
 		return ListResponse{}, err
 	}
@@ -88,20 +85,16 @@ func (s *Service) FindAll(accountID, status string, page, limit int) (ListRespon
 	var out []TorrentResponse
 	for rows.Next() {
 		var r TorrentResponse
-		var completedAt, lastActivityAt, syncedAt *time.Time
+		var completedAt, lastActivityAt, syncedAt, createdAt *time.Time
 		if err := rows.Scan(&r.ID, &r.AccountID, &r.AccountName, &r.SiteTorrentID, &r.Name,
 			&r.SizeBytes, &r.Status, &r.UploadedBytes, &r.DownloadedBytes, &r.Ratio,
-			&r.SeedTimeSecs, &r.LeechTimeSecs, &completedAt, &lastActivityAt, &syncedAt, &r.CreatedAt); err != nil {
+			&r.SeedTimeSecs, &r.LeechTimeSecs, &completedAt, &lastActivityAt, &syncedAt, &createdAt); err != nil {
 			return ListResponse{}, err
 		}
-		r.SizeBytes = strconv.FormatInt(mustParse(r.SizeBytes), 10)
-		r.UploadedBytes = strconv.FormatInt(mustParse(r.UploadedBytes), 10)
-		r.DownloadedBytes = strconv.FormatInt(mustParse(r.DownloadedBytes), 10)
 		r.CompletedAt = fmtTime(completedAt)
 		r.LastActivityAt = fmtTime(lastActivityAt)
 		r.SyncedAt = fmtTime(syncedAt)
-		r.CreatedAt = time.Time{}.Format(time.RFC3339Nano)
-		// createdAt 重扫
+		r.CreatedAt = derefTime(createdAt)
 		out = append(out, r)
 	}
 	if out == nil {
@@ -110,10 +103,11 @@ func (s *Service) FindAll(accountID, status string, page, limit int) (ListRespon
 	return ListResponse{Data: out, Total: total, Page: page, Limit: limit}, nil
 }
 
-func mustParse(s string) int64 {
-	// pgx 扫 BIGINT 到 string 接口时给的是数字字符串
-	n, _ := strconv.ParseInt(s, 10, 64)
-	return n
+func derefTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func fmtTime(t *time.Time) *string {

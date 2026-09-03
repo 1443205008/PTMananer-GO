@@ -1,14 +1,14 @@
 package syncer
 
 import (
+	"database/sql"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // TriggerAccountHandler POST /sync/accounts/:id — 手动触发单账户同步（异步入队）
-func TriggerAccountHandler(pool *pgxpool.Pool, queue *Queue) gin.HandlerFunc {
+func TriggerAccountHandler(pool *sql.DB, queue *Queue) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		jobID, err := queue.Enqueue(c.Request.Context(), "account-stats", id, "manual", 3)
@@ -21,11 +21,11 @@ func TriggerAccountHandler(pool *pgxpool.Pool, queue *Queue) gin.HandlerFunc {
 }
 
 // TriggerAllHandler POST /sync/all — 所有账户批量入队
-func TriggerAllHandler(pool *pgxpool.Pool, queue *Queue) gin.HandlerFunc {
+func TriggerAllHandler(pool *sql.DB, queue *Queue) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		rows, err := pool.Query(c.Request.Context(), `
-			SELECT "id" FROM "TrackerAccount"
-			WHERE "isEnabled"=true AND "syncEnabled"=true AND "status" != 'CREDENTIAL_INVALID'`)
+		rows, err := pool.Query(`
+			SELECT id FROM TrackerAccount
+			WHERE isEnabled=true AND syncEnabled=true AND status != 'CREDENTIAL_INVALID'`)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "查询失败"})
 			return

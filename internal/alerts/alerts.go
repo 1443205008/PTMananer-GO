@@ -2,20 +2,19 @@
 package alerts
 
 import (
-	"context"
+	"log"
+	"database/sql"
 	"net/http"
 	"time"
 
 	"github.com/1443205008/ptmanager-go/internal/db"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Service struct{ pool *pgxpool.Pool }
+type Service struct{ pool *sql.DB }
 
-func NewService(pool *pgxpool.Pool) *Service { return &Service{pool: pool} }
+func NewService(pool *sql.DB) *Service { return &Service{pool: pool} }
 
 type AlertResponse struct {
 	ID          string  `json:"id"`
@@ -44,18 +43,18 @@ func (a *alertScan) toResponse() AlertResponse {
 }
 
 const alertSelect = `
-SELECT al."id", al."accountId", a."accountName", al."type", al."severity", al."title", al."message",
-       al."isRead", al."isDismissed", al."createdAt", al."updatedAt"
-FROM "Alert" al
-LEFT JOIN "TrackerAccount" a ON a."id" = al."accountId"`
+SELECT al.id, al.accountId, a.accountName, al.type, al.severity, al.title, al.message,
+       al.isRead, al.isDismissed, al.createdAt, al.updatedAt
+FROM Alert al
+LEFT JOIN TrackerAccount a ON a.id = al.accountId`
 
 func (s *Service) FindAll(unreadOnly bool) ([]AlertResponse, error) {
-	q := alertSelect + ` WHERE al."isDismissed"=false`
+	q := alertSelect + " WHERE al.isDismissed=FALSE"
 	if unreadOnly {
-		q += ` AND al."isRead"=false`
+		q += " AND al.isRead=FALSE"
 	}
-	q += ` ORDER BY al."severity" DESC, al."createdAt" DESC LIMIT 200`
-	rows, err := s.pool.Query(context.Background(), q)
+	q += " ORDER BY al.severity DESC, al.createdAt DESC LIMIT 200"
+	rows, err := s.pool.Query(q)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func (s *Service) FindAll(unreadOnly bool) ([]AlertResponse, error) {
 	return scanAlerts(rows)
 }
 
-func scanAlerts(rows pgx.Rows) ([]AlertResponse, error) {
+func scanAlerts(rows *sql.Rows) ([]AlertResponse, error) {
 	var out []AlertResponse
 	for rows.Next() {
 		var r alertScan
@@ -81,17 +80,15 @@ func scanAlerts(rows pgx.Rows) ([]AlertResponse, error) {
 
 func (s *Service) UnreadCount() (int, error) {
 	var n int
-	err := s.pool.QueryRow(context.Background(),
-		`SELECT COUNT(*) FROM "Alert" WHERE "isRead"=false AND "isDismissed"=false`).Scan(&n)
+	err := s.pool.QueryRow("SELECT COUNT(*) FROM Alert WHERE isRead=FALSE AND isDismissed=FALSE").Scan(&n)
 	return n, err
 }
 
 func (s *Service) MarkRead(id string) (AlertResponse, error) {
-	ctx := context.Background()
 	if _, err := s.GetOne(id); err != nil {
 		return AlertResponse{}, err
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE "Alert" SET "isRead"=true, "updatedAt"=NOW() WHERE "id"=$1`, id)
+	_, err := s.pool.Exec("UPDATE Alert SET isRead=TRUE, updatedAt=NOW(3) WHERE id=?", id)
 	if err != nil {
 		return AlertResponse{}, err
 	}
@@ -100,11 +97,11 @@ func (s *Service) MarkRead(id string) (AlertResponse, error) {
 
 func (s *Service) GetOne(id string) (AlertResponse, error) {
 	var r alertScan
-	err := s.pool.QueryRow(context.Background(), alertSelect+` WHERE al."id"=$1`, id).
+	err := s.pool.QueryRow(alertSelect+" WHERE al.id=?", id).
 		Scan(&r.ID, &r.AccountID, &r.AccountName, &r.Type, &r.Severity, &r.Title, &r.Message,
 			&r.IsRead, &r.IsDismissed, &r.createdAtT, &r.updatedAtT)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if err == sql.ErrNoRows {
 			return AlertResponse{}, &apiErr{http.StatusNotFound, "Alert " + id + " not found"}
 		}
 		return AlertResponse{}, err
@@ -113,20 +110,19 @@ func (s *Service) GetOne(id string) (AlertResponse, error) {
 }
 
 func (s *Service) MarkAllRead() (int, error) {
-	tag, err := s.pool.Exec(context.Background(),
-		`UPDATE "Alert" SET "isRead"=true, "updatedAt"=NOW() WHERE "isRead"=false AND "isDismissed"=false`)
+	tag, err := s.pool.Exec("UPDATE Alert SET isRead=TRUE, updatedAt=NOW(3) WHERE isRead=FALSE AND isDismissed=FALSE")
 	if err != nil {
 		return 0, err
 	}
-	return int(tag.RowsAffected()), nil
+	n, _ := tag.RowsAffected()
+	return int(n), nil
 }
 
 func (s *Service) Dismiss(id string) error {
 	if _, err := s.GetOne(id); err != nil {
 		return err
 	}
-	_, err := s.pool.Exec(context.Background(),
-		`UPDATE "Alert" SET "isDismissed"=true, "isRead"=true, "updatedAt"=NOW() WHERE "id"=$1`, id)
+	_, err := s.pool.Exec("UPDATE Alert SET isDismissed=TRUE, isRead=TRUE, updatedAt=NOW(3) WHERE id=?", id)
 	return err
 }
 
@@ -142,6 +138,7 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(ae.status, gin.H{"statusCode": ae.status, "message": ae.message})
 		return
 	}
+	log.Printf("[http] 500 on %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 

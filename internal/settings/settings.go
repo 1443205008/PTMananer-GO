@@ -2,6 +2,8 @@
 package settings
 
 import (
+	"log"
+	"database/sql"
 	"context"
 	"net/http"
 	"time"
@@ -10,7 +12,6 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/db"
 
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -54,18 +55,18 @@ type SystemSettings struct {
 }
 
 type Service struct {
-	pool *pgxpool.Pool
+	pool *sql.DB
 	rdb  *redis.Client
 	cfg  *config.Config
 }
 
-func NewService(pool *pgxpool.Pool, rdb *redis.Client, cfg *config.Config) *Service {
+func NewService(pool *sql.DB, rdb *redis.Client, cfg *config.Config) *Service {
 	return &Service{pool: pool, rdb: rdb, cfg: cfg}
 }
 
 func (s *Service) defaultUserID(ctx context.Context) (string, error) {
 	var id string
-	err := s.pool.QueryRow(ctx, `SELECT "id" FROM "User" ORDER BY "createdAt" ASC LIMIT 1`).Scan(&id)
+	err := s.pool.QueryRow(`SELECT id FROM User ORDER BY createdAt ASC LIMIT 1`).Scan(&id)
 	if err != nil {
 		return "", &apiErr{http.StatusNotFound, "系统用户不存在，请先执行数据库初始化"}
 	}
@@ -77,7 +78,7 @@ func (s *Service) Get(ctx context.Context) (SystemSettings, error) {
 	if err != nil {
 		return SystemSettings{}, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT "key","value","updatedAt" FROM "SystemSetting" WHERE "userId"=$1`, userID)
+	rows, err := s.pool.Query("SELECT `key`,`value`,`updatedAt` FROM `SystemSetting` WHERE `userId`=?", userID)
 	if err != nil {
 		return SystemSettings{}, err
 	}
@@ -155,10 +156,9 @@ func (s *Service) Update(ctx context.Context, dto map[string]interface{}) (Syste
 		default:
 			return SystemSettings{}, &apiErr{http.StatusBadRequest, "不支持的系统设置：" + k}
 		}
-		if _, err := s.pool.Exec(ctx, `
-			INSERT INTO "SystemSetting"("id","userId","key","value","createdAt","updatedAt")
-			VALUES($1,$2,$3,$4,NOW(),NOW())
-			ON CONFLICT ("userId","key") DO UPDATE SET "value"=$4, "updatedAt"=NOW()`,
+		if _, err := s.pool.Exec("INSERT INTO SystemSetting(id,userId,`key`,`value`,createdAt,updatedAt) "+
+			"VALUES(?,?,?,?,NOW(3),NOW(3)) "+
+			"ON DUPLICATE KEY UPDATE `value`=VALUES(`value`), updatedAt=NOW(3)",
 			db.NewID(), userID, k, strVal); err != nil {
 			return SystemSettings{}, err
 		}
@@ -171,7 +171,7 @@ func (s *Service) Reset(ctx context.Context) (SystemSettings, error) {
 	if err != nil {
 		return SystemSettings{}, err
 	}
-	if _, err := s.pool.Exec(ctx, `DELETE FROM "SystemSetting" WHERE "userId"=$1`, userID); err != nil {
+	if _, err := s.pool.Exec(`DELETE FROM SystemSetting WHERE userId=?`, userID); err != nil {
 		return SystemSettings{}, err
 	}
 	return s.Get(ctx)
@@ -187,7 +187,7 @@ type Status struct {
 
 func (s *Service) StatusOf(ctx context.Context) Status {
 	st := Status{Version: "0.1.0", Environment: s.cfg.NodeEnv, Database: "connected", Redis: "connected", CheckedAt: time.Now().UTC().Format(time.RFC3339Nano)}
-	if _, err := s.pool.Exec(ctx, `SELECT 1`); err != nil {
+	if _, err := s.pool.Exec(`SELECT 1`); err != nil {
 		st.Database = "error"
 	}
 	if err := s.rdb.Ping(ctx).Err(); err != nil {
@@ -215,18 +215,21 @@ func (s *Service) Cleanup(ctx context.Context) (CleanupResult, error) {
 
 	res := CleanupResult{CleanedAt: now.UTC().Format(time.RFC3339Nano)}
 
-	tag, err := s.pool.Exec(ctx, `
-		DELETE FROM "SyncJob" WHERE "createdAt" < $1 AND "status" != 'RUNNING'`, syncBefore)
+	tag, err := s.pool.Exec(`
+		DELETE FROM SyncJob WHERE createdAt < ? AND status != 'RUNNING'`, syncBefore)
 	if err == nil {
-		res.SyncJobs = int(tag.RowsAffected())
+		n, _ := tag.RowsAffected()
+		res.SyncJobs = int(n)
 	}
-	tag, err = s.pool.Exec(ctx, `DELETE FROM "TrackerDailySnapshot" WHERE "snapshotDate" < $1`, snapBefore)
+	tag, err = s.pool.Exec(`DELETE FROM TrackerDailySnapshot WHERE snapshotDate < ?`, snapBefore)
 	if err == nil {
-		res.Snapshots = int(tag.RowsAffected())
+		n, _ := tag.RowsAffected()
+		res.Snapshots = int(n)
 	}
-	tag, err = s.pool.Exec(ctx, `DELETE FROM "Alert" WHERE "createdAt" < $1 AND "isDismissed"=true`, alertBefore)
+	tag, err = s.pool.Exec(`DELETE FROM Alert WHERE createdAt < ? AND isDismissed=true`, alertBefore)
 	if err == nil {
-		res.Alerts = int(tag.RowsAffected())
+		n, _ := tag.RowsAffected()
+		res.Alerts = int(n)
 	}
 	return res, nil
 }
@@ -270,6 +273,7 @@ func writeErr(c *gin.Context, err error) {
 		c.JSON(ae.status, gin.H{"statusCode": ae.status, "message": ae.message})
 		return
 	}
+	log.Printf("[http] 500 on %s %s: %v", c.Request.Method, c.Request.URL.Path, err)
 	c.JSON(http.StatusInternalServerError, gin.H{"statusCode": 500, "message": "服务器内部错误"})
 }
 
