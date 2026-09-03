@@ -3,12 +3,15 @@ package search
 
 import (
 	"context"
+
 	"database/sql"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/1443205008/ptmanager-go/internal/mteam"
 	"github.com/1443205008/ptmanager-go/internal/providers"
@@ -19,10 +22,11 @@ import (
 type Service struct {
 	pool     *sql.DB
 	registry *providers.Registry
+	rdb      *redis.Client
 }
 
-func NewService(pool *sql.DB, registry *providers.Registry) *Service {
-	return &Service{pool: pool, registry: registry}
+func NewService(pool *sql.DB, registry *providers.Registry, rdb *redis.Client) *Service {
+	return &Service{pool: pool, registry: registry, rdb: rdb}
 }
 
 type SearchItem struct {
@@ -166,8 +170,22 @@ func (s *Service) GenDlToken(torrentID string) (map[string]string, error) {
 	return map[string]string{"url": token}, nil
 }
 
+const teamListCacheKey = "ptmanager:cache:teams"
+const teamListCacheTTL = time.Hour
+
 func (s *Service) GetTeamList() ([]map[string]interface{}, error) {
 	ctx := context.Background()
+
+	// 缓存命中（TS 版注释自述"结果较稳定可长时间缓存"，这里落 1h）
+	if s.rdb != nil {
+		if cached, err := s.rdb.Get(ctx, teamListCacheKey).Result(); err == nil && cached != "" {
+			var out []map[string]interface{}
+			if err := jsonUnmarshal([]byte(cached), &out); err == nil {
+				return out, nil
+			}
+		}
+	}
+
 	accountID, _, provider, err := s.resolveSearchAccount(ctx)
 	if err != nil {
 		return nil, err
@@ -188,6 +206,13 @@ func (s *Service) GetTeamList() ([]map[string]interface{}, error) {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i]["name"].(string) < out[j]["name"].(string)
 	})
+
+	// 成功才写缓存（失败不缓存，避免坏数据驻留）
+	if s.rdb != nil && len(out) > 0 {
+		if data, err := jsonMarshal(out); err == nil {
+			s.rdb.Set(ctx, teamListCacheKey, data, teamListCacheTTL)
+		}
+	}
 	return out, nil
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/dashboard"
 	"github.com/1443205008/ptmanager-go/internal/db"
 	"github.com/1443205008/ptmanager-go/internal/fakeseed"
+	"github.com/1443205008/ptmanager-go/internal/middleware"
 	"github.com/1443205008/ptmanager-go/internal/mteam"
 	"github.com/1443205008/ptmanager-go/internal/providers"
 	"github.com/1443205008/ptmanager-go/internal/search"
@@ -68,7 +69,7 @@ func main() {
 	accountsSvc := accounts.NewService(pool, cryptoSvc, registry)
 	dashSvc := dashboard.NewService(pool, accountsSvc)
 	torrentSvc := torrents.NewService(pool)
-	searchSvc := search.NewService(pool, registry)
+	searchSvc := search.NewService(pool, registry, rdb)
 	alertsSvc := alerts.NewService(pool)
 	fakeSvc := fakeseed.NewService(pool, registry, cfg)
 
@@ -88,7 +89,13 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.LoggerWithWriter(gin.DefaultWriter), gin.Recovery())
+	r.Use(middleware.Gzip())
 	r.Use(corsMiddleware(cfg.CorsOrigin))
+
+	// 无鉴权健康检查（docker healthcheck / 监控探针用）
+	r.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
 	// 全局鉴权中间件
 	authMW := auth.Middleware(cfg)

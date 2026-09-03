@@ -12,6 +12,7 @@ import (
 	"github.com/1443205008/ptmanager-go/internal/db"
 	"github.com/1443205008/ptmanager-go/internal/domain"
 	"github.com/1443205008/ptmanager-go/internal/providers"
+	"github.com/1443205008/ptmanager-go/internal/settings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -124,6 +125,12 @@ func NewScheduler(pool *sql.DB, queue *Queue, settings SettingsService) *Schedul
 
 func (s *Scheduler) Run(ctx context.Context) {
 	time.Sleep(5 * time.Second)
+
+	// 每日数据清理（对齐 TS 版 retention 设置；避免 SyncJob/Alert 无限堆积）
+	go s.runDailyCleanup(ctx)
+
+	// 启动即首次同步（原行为要空等一个完整 interval，重启后数据是旧的）
+	first := true
 	for {
 		enabled, err := s.settings.SyncEnabled(ctx)
 		if err != nil {
@@ -145,7 +152,14 @@ func (s *Scheduler) Run(ctx context.Context) {
 		if err != nil || interval <= 0 {
 			interval = 30
 		}
-		log.Printf("[scheduler] sync interval: %d minutes", interval)
+		if first {
+			log.Printf("[scheduler] initial sync on startup")
+			s.scheduleAccountSyncs(ctx)
+			first = false
+			// 首跑后仍按 interval 等待下一轮
+		} else {
+			log.Printf("[scheduler] sync interval: %d minutes", interval)
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -155,6 +169,52 @@ func (s *Scheduler) Run(ctx context.Context) {
 			s.scheduleAccountSyncs(ctx)
 		}
 	}
+}
+
+// runDailyCleanup 每天按 retention 设置清理历史数据
+func (s *Scheduler) runDailyCleanup(ctx context.Context) {
+	// 首次延迟 10 分钟（避开启动高峰）
+	time.Sleep(10 * time.Minute)
+	for {
+		if s.settings != nil {
+			if n, err := s.cleanupOld(ctx); err != nil {
+				log.Printf("[scheduler] daily cleanup failed: %v", err)
+			} else if n.syncJobs+n.snapshots+n.alerts > 0 {
+				log.Printf("[scheduler] daily cleanup: %d jobs, %d snapshots, %d alerts", n.syncJobs, n.snapshots, n.alerts)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-s.stop:
+			return
+		case <-time.After(24 * time.Hour):
+		}
+	}
+}
+
+// cleanupResult 清理统计
+type cleanupResult struct {
+	syncJobs  int
+	snapshots int
+	alerts    int
+}
+
+// cleanupOld 供调度器调用（settings.Service 已有 Cleanup 方法，通过接口解耦）
+type cleanupRunner interface {
+	Cleanup(ctx context.Context) (settings.CleanupResult, error)
+}
+
+func (s *Scheduler) cleanupOld(ctx context.Context) (cleanupResult, error) {
+	runner, ok := s.settings.(cleanupRunner)
+	if !ok {
+		return cleanupResult{}, nil
+	}
+	r, err := runner.Cleanup(ctx)
+	if err != nil {
+		return cleanupResult{}, err
+	}
+	return cleanupResult{syncJobs: r.SyncJobs, snapshots: r.Snapshots, alerts: r.Alerts}, nil
 }
 
 func (s *Scheduler) scheduleAccountSyncs(ctx context.Context) {
