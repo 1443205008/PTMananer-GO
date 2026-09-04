@@ -107,6 +107,69 @@ func (s *Service) GetUser(userID string) (AuthUser, error) {
 	return AuthUser{ID: userID, Email: email, Name: name, CreatedAt: createdAt.UTC().Format(time.RFC3339Nano)}, nil
 }
 
+// UpdateAccount 修改当前登录用户的邮箱和/或密码。必须提供当前密码。
+func (s *Service) UpdateAccount(userID, currentPassword, newEmail, newPassword string) (AuthUser, error) {
+	newEmail = strings.ToLower(strings.TrimSpace(newEmail))
+	newPassword = strings.TrimSpace(newPassword)
+	if currentPassword == "" {
+		return AuthUser{}, &APIError{Status: http.StatusBadRequest, Message: "请输入当前密码"}
+	}
+	if newEmail == "" && newPassword == "" {
+		return AuthUser{}, &APIError{Status: http.StatusBadRequest, Message: "请填写新邮箱或新密码"}
+	}
+	if newPassword != "" && len(newPassword) < 8 {
+		return AuthUser{}, &APIError{Status: http.StatusBadRequest, Message: "新密码至少 8 位"}
+	}
+	if newPassword != "" && len(newPassword) > 128 {
+		return AuthUser{}, &APIError{Status: http.StatusBadRequest, Message: "新密码过长"}
+	}
+	if newEmail != "" {
+		if !strings.Contains(newEmail, "@") || strings.Contains(newEmail, " ") {
+			return AuthUser{}, &APIError{Status: http.StatusBadRequest, Message: "请输入有效的邮箱地址"}
+		}
+	}
+
+	var hash, email string
+	var name *string
+	var createdAt time.Time
+	err := s.pool.QueryRow(`SELECT password, email, name, createdAt FROM User WHERE id=?`, userID).
+		Scan(&hash, &email, &name, &createdAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "登录用户不存在"}
+		}
+		return AuthUser{}, err
+	}
+	if !cryptoutil.VerifyPassword(currentPassword, hash) {
+		return AuthUser{}, &APIError{Status: http.StatusUnauthorized, Message: "当前密码错误"}
+	}
+
+	if newEmail != "" && newEmail != email {
+		var dummy string
+		dup := s.pool.QueryRow(`SELECT id FROM User WHERE email=? AND id<>?`, newEmail, userID).Scan(&dummy)
+		if dup == nil {
+			return AuthUser{}, &APIError{Status: http.StatusConflict, Message: "该邮箱已被使用"}
+		}
+		if dup != sql.ErrNoRows {
+			return AuthUser{}, dup
+		}
+		email = newEmail
+	}
+
+	if newPassword != "" {
+		hashed, err := cryptoutil.HashPassword(newPassword)
+		if err != nil {
+			return AuthUser{}, err
+		}
+		hash = hashed
+	}
+
+	if _, err := s.pool.Exec(`UPDATE User SET email=?, password=?, updatedAt=NOW(3) WHERE id=?`, email, hash, userID); err != nil {
+		return AuthUser{}, err
+	}
+	return AuthUser{ID: userID, Email: email, Name: name, CreatedAt: createdAt.UTC().Format(time.RFC3339Nano)}, nil
+}
+
 func deref(s *string) string {
 	if s == nil {
 		return ""
@@ -169,6 +232,26 @@ func MeHandler(svc *Service) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		userID := c.GetString("userID")
 		user, err := svc.GetUser(userID)
+		if err != nil {
+			WriteError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, user)
+	}
+}
+
+func UpdateAccountHandler(svc *Service) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var dto struct {
+			CurrentPassword string `json:"currentPassword" binding:"required"`
+			Email           string `json:"email"`
+			NewPassword     string `json:"newPassword"`
+		}
+		if err := c.ShouldBindJSON(&dto); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"statusCode": 400, "message": "请输入当前密码"})
+			return
+		}
+		user, err := svc.UpdateAccount(c.GetString("userID"), dto.CurrentPassword, dto.Email, dto.NewPassword)
 		if err != nil {
 			WriteError(c, err)
 			return

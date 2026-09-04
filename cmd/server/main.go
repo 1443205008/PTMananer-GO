@@ -111,6 +111,7 @@ func main() {
 	secured := api.Group("", authMW.Handle)
 	{
 		secured.GET("/auth/me", auth.MeHandler(authSvc))
+		secured.PATCH("/auth/account", auth.UpdateAccountHandler(authSvc))
 
 		acc := secured.Group("/accounts")
 		acc.POST("", accounts.CreateHandler(accountsSvc))

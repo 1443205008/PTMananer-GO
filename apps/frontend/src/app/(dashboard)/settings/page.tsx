@@ -8,6 +8,7 @@ import {
   Clock3,
   Database,
   Info,
+  KeyRound,
   Loader2,
   RefreshCw,
   RotateCcw,
@@ -24,10 +25,11 @@ import {
   useSettingsStatus,
   useUpdateSettings,
 } from '@/hooks/use-settings';
+import { useAuth, useUpdateAccount } from '@/hooks/use-auth';
 import type { SettingsStatus, SystemSettings, UpdateSystemSettingsInput } from '@/types/api';
 import { cn } from '@/lib/utils';
 
-type SettingsTab = 'general' | 'sync' | 'alerts' | 'data' | 'about';
+type SettingsTab = 'account' | 'general' | 'sync' | 'alerts' | 'data' | 'about';
 type SettingsForm = UpdateSystemSettingsInput;
 
 const DEFAULT_FORM: SettingsForm = {
@@ -43,6 +45,7 @@ const DEFAULT_FORM: SettingsForm = {
 };
 
 const TABS: Array<{ id: SettingsTab; label: string; icon: typeof Settings }> = [
+  { id: 'account', label: '登录账号', icon: KeyRound },
   { id: 'general', label: '通用设置', icon: SlidersHorizontal },
   { id: 'sync', label: '同步设置', icon: RefreshCw },
   { id: 'alerts', label: '告警设置', icon: Bell },
@@ -151,7 +154,7 @@ export default function SettingsPage() {
           </div>
           <p className="mt-0.5 text-sm text-fg-subtle">管理同步、告警和历史数据保留策略</p>
         </div>
-        {activeTab !== 'about' && (
+        {activeTab !== 'about' && activeTab !== 'account' && (
           <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={handleReset}
@@ -209,6 +212,7 @@ export default function SettingsPage() {
         </nav>
 
         <div className="min-w-0 flex-1 space-y-4">
+          {activeTab === 'account' && <AccountSettings />}
           {activeTab === 'general' && <GeneralSettings form={form} updateField={updateField} />}
           {activeTab === 'sync' && <SyncSettings form={form} updateField={updateField} />}
           {activeTab === 'alerts' && <AlertSettings form={form} updateField={updateField} />}
@@ -226,6 +230,112 @@ export default function SettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AccountSettings() {
+  const { data: user } = useAuth();
+  const update = useUpdateAccount();
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+
+  useEffect(() => {
+    if (user?.email) setEmail(user.email);
+  }, [user?.email]);
+
+  const emailChanged = email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase();
+  const passwordChanged = newPassword.length > 0;
+  const canSubmit = currentPassword.length > 0 && (emailChanged || passwordChanged) && !update.isPending;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!canSubmit) return;
+    if (passwordChanged && newPassword.length < 8) return;
+    if (passwordChanged && newPassword !== confirmPassword) return;
+    update.mutate(
+      {
+        currentPassword,
+        email: emailChanged ? email.trim() : undefined,
+        newPassword: passwordChanged ? newPassword : undefined,
+      },
+      {
+        onSuccess: () => {
+          setCurrentPassword('');
+          setNewPassword('');
+          setConfirmPassword('');
+        },
+      },
+    );
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <SettingCard title="登录账号" description="修改系统登录邮箱和密码。改密码不影响 M-Team API Key。">
+        <SettingRow label="登录邮箱" description="用来登录本系统，不是站点账号。">
+          <input
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="field bg-bg-base sm:py-2 lg:w-64"
+          />
+        </SettingRow>
+        <SettingRow label="当前密码" description="验证身份后才能修改。">
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="field bg-bg-base sm:py-2 lg:w-64"
+          />
+        </SettingRow>
+        <SettingRow label="新密码" description="至少 8 位；不改密码请留空。">
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="field bg-bg-base sm:py-2 lg:w-64"
+          />
+        </SettingRow>
+        <SettingRow label="确认新密码" description="与新密码保持一致。">
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="field bg-bg-base sm:py-2 lg:w-64"
+          />
+        </SettingRow>
+      </SettingCard>
+
+      {passwordChanged && newPassword.length < 8 && (
+        <p className="text-xs text-danger">新密码至少 8 位</p>
+      )}
+      {passwordChanged && newPassword.length >= 8 && confirmPassword && newPassword !== confirmPassword && (
+        <p className="text-xs text-danger">两次输入的新密码不一致</p>
+      )}
+      {update.isError && (
+        <p className="text-xs text-danger">{errorMessage(update.error)}</p>
+      )}
+      {update.isSuccess && (
+        <p className="flex items-center gap-2 text-xs text-success">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          账号已更新，下次请用新邮箱/密码登录。
+        </p>
+      )}
+
+      <button
+        type="submit"
+        disabled={!canSubmit || (passwordChanged && (newPassword.length < 8 || newPassword !== confirmPassword))}
+        className="btn-accent"
+      >
+        {update.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+        保存账号
+      </button>
+    </form>
   );
 }
 

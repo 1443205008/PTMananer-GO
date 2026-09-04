@@ -23,3 +23,14 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
 export async function logout(): Promise<void> {
   await apiClient.post('/v1/auth/logout');
 }
+
+export interface UpdateAccountInput {
+  currentPassword: string;
+  email?: string;
+  newPassword?: string;
+}
+
+export async function updateAccount(input: UpdateAccountInput): Promise<AuthUser> {
+  const { data } = await apiClient.patch<AuthUser>('/v1/auth/account', input);
+  return data;
+}

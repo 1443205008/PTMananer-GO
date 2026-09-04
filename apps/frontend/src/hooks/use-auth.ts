@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchCurrentUser, login, logout, type LoginInput } from '@/lib/api/auth';
+import { fetchCurrentUser, login, logout, updateAccount, type LoginInput, type UpdateAccountInput } from '@/lib/api/auth';
 
 const AUTH_QUERY_KEY = ['auth', 'me'] as const;
 
@@ -30,6 +30,16 @@ export function useLogout() {
     mutationFn: logout,
     onSuccess: () => {
       queryClient.clear();
+    },
+  });
+}
+
+export function useUpdateAccount() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateAccountInput) => updateAccount(input),
+    onSuccess: (user) => {
+      queryClient.setQueryData(AUTH_QUERY_KEY, user);
     },
   });
 }
