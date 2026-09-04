@@ -16,6 +16,29 @@
 
 表结构与 Prisma 版一一对应（列名/索引/枚举值），内置幂等迁移，启动即建表。
 
+## 部署
+
+**方式一：拉镜像（推荐，零构建）**——main 分支每次推送，GitHub Actions 自动构建并发布到 GHCR：
+
+```bash
+docker run -d --name ptmanager \
+  -e DATABASE_URL="mysql://user:pass@host:3306/ptmanager" \
+  -e REDIS_URL="redis://host:6379" \
+  -e JWT_SECRET=... -e CREDENTIAL_ENCRYPTION_KEY=... \
+  -e RUN_SEED=true -e SEED_ADMIN_PASSWORD=... \
+  -p 4000:4000 ghcr.io/1443205008/ptmananer-go:latest
+```
+
+（首次使用需在 GitHub 仓库 Packages 设置里把 package 设为 public，或先 docker login ghcr.io）
+
+**方式二：本地构建**（改了代码想立即验证）：
+
+```bash
+docker compose up -d --build
+```
+
+依赖安装和 Go 模块下载走 BuildKit 缓存挂载，二次构建只有编译耗时。
+
 ## 快速开始（Docker）
 
 ```bash

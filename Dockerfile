@@ -10,7 +10,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/frontend/package.json apps/frontend/
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 # 构建（packages/shared 会被 frontend 的 tsc 一起编译）
 COPY packages/shared packages/shared
@@ -24,13 +25,15 @@ RUN apk add --no-cache git ca-certificates
 
 WORKDIR /app
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
 # 从 frontend 阶段拷构建产物到 embed 目录（go:embed 会把它打进二进制）
 COPY --from=frontend /repo/apps/frontend/out internal/web/frontend
 
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /ptmanager ./cmd/server
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /ptmanager ./cmd/server
 
 # ── 运行时 ──────────────────────────────────────────────────
 FROM alpine:3.20

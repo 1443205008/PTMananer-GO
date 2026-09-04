@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: go:embed 占位（无前端产物时保证可编译）
+        run: |
+          mkdir -p internal/web/frontend
+          echo "placeholder" > internal/web/frontend/.gitkeep
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
