@@ -2,7 +2,7 @@
 
 私人 PT 账号聚合管理平台 —— [PTMananer](https://github.com/1443205008/PTMananer) 的 Go 重写版。
 
-**单二进制**：前端（Next.js 静态导出）通过 `go:embed` 打进 Go 程序，MySQL 做存储，Redis 做同步队列。一个可执行文件 + MySQL + Redis 即完整部署。
+**单二进制**：前端（Next.js 静态导出）经 `go:embed` 打进 Go 程序，MySQL 存储，Redis 同步队列。一个可执行文件 + MySQL + Redis 即完整部署。
 
 ## 架构
 
@@ -16,10 +16,9 @@
 
 表结构与 Prisma 版一一对应（列名/索引/枚举值），内置幂等迁移，启动即建表。
 
-## 快速开始
+## 快速开始（Docker）
 
 ```bash
-# 1. 环境变量
 cat > .env <<'EOF'
 MYSQL_PASSWORD=change-me
 MYSQL_ROOT_PASSWORD=change-me-root
@@ -28,27 +27,39 @@ CREDENTIAL_ENCRYPTION_KEY=    # openssl rand -hex 32
 SEED_ADMIN_PASSWORD=change-me-admin
 EOF
 
-# 2. 一键起（MySQL + Redis + 单二进制应用）
 docker compose up -d --build
 
-# 3. 打开
-# http://localhost:4000  → 登录页（admin@pt-manager.local / SEED_ADMIN_PASSWORD）
+# 打开 http://localhost:4000
+# 登录：admin@pt-manager.local / SEED_ADMIN_PASSWORD
+```
+
+Docker 多阶段构建：Node 阶段编译前端 → Go 阶段 embed 进二进制。无需本地 Node 环境。
+
+## 仓库结构（monorepo）
+
+```
+cmd/server/            Go 入口
+internal/              Go 后端（auth/accounts/syncer/mteam/fakeseed/...）
+apps/frontend/         前端源码（Next.js 15，output: 'export'）
+packages/shared/       前后端共享类型/枚举
+scripts/embed-frontend.sh   前端构建 + 填充 embed 目录
 ```
 
 ## 从源码构建
 
 ```bash
-# 前端：静态导出 + 嵌入（需要 pnpm）
-./scripts/embed-frontend.sh ../PTMananer/apps/frontend
-
-# 后端：编译（产物已含前端）
+# 方式一：两步（本地有 Node + Go）
+./scripts/embed-frontend.sh        # 构建前端 → internal/web/frontend/
 go build -o ptmanager ./cmd/server
+
+# 方式二：一条 Docker 命令（推荐，无需本地环境）
+docker compose up -d --build
 
 # 测试
 go test ./...
 ```
 
-前端改动后重跑 `embed-frontend.sh` 再编译即可。前端构建参数 `NEXT_PUBLIC_API_BASE_URL=/api`（同源）。
+改前端：编辑 `apps/frontend/src/` → 重跑上面任一构建。
 
 ## 环境变量
 
@@ -61,26 +72,14 @@ go test ./...
 | `BACKEND_PORT` | 监听端口 | 4000 |
 | `RUN_SEED` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | 初始管理员 | false |
 | `MTEAM_BASE_URL` | M-Team API | https://api.m-team.cc |
-| `CORS_ORIGIN` | 跨源（前端已同源，基本用不到） | http://localhost:3000 |
 
 ## 功能
 
-管理员登录（JWT httpOnly cookie）· M-Team 账户管理（API Key AES-256-GCM 加密）· 数据同步（profile/stats/每日快照/种子，队列异步+退避重试+失败告警）· 定时同步（30 分钟可调）· 仪表盘（跨账户汇总+趋势）· 种子列表 · 站内搜索/制作组/下载 Token · 告警中心 · 模拟保种（bencode 解析 + tracker 周期上报，重启恢复）· 系统设置/清理
-
-## 项目结构
-
-```
-cmd/server/            入口
-internal/
-  web/                 go:embed 前端 + 静态路由（frontend/ 为构建产物）
-  config/ domain/ db/ cryptoutil/ auth/
-  providers/ mteam/    TrackerProvider 接口 + M-Team 实现
-  accounts/ syncer/ dashboard/ torrents/ search/ alerts/ fakeseed/ settings/
-scripts/embed-frontend.sh  前端构建+嵌入脚本
-```
+管理员登录（JWT httpOnly cookie，5次/分/IP 登录限流）· M-Team 账户管理（API Key AES-256-GCM 加密）· 数据同步（profile/stats/每日快照/种子，队列异步+退避重试+失败告警）· 定时同步（启动即首跑，间隔可调）· 仪表盘 · 种子列表 · 站内搜索/制作组/下载 Token · 告警中心 · 模拟保种（bencode 解析 + tracker 上报，重启恢复）· 系统设置/每日自动清理 · gzip 压缩 · /healthz 健康检查
 
 ## 安全约束
 
-- API Key 加密存储（AES-256-GCM），绝不回显/记录
-- 凭据字段与响应 DTO 物理隔离
+- API Key AES-256-GCM 加密存储，绝不回显/记录
+- scrypt 密码哈希（与 TS 版互通）
+- JWT 锁定 HS256
 - 生产缺 JWT_SECRET 拒绝启动

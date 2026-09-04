@@ -1,0 +1,19 @@
+{
+  "name": "pt-manager-go",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PT Manager - 私人 PT 账号聚合管理平台 (Phase 1: M-Team)",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3"
+  },
+  "scripts": {
+    "build:frontend": "cd frontend && NEXT_PUBLIC_API_BASE_URL=/api pnpm build",
+    "embed": "./scripts/embed-frontend.sh"
+  }
+}

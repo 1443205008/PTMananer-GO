@@ -1,0 +1,294 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── PT Manager Design System — Light / Dark ───────────────────────────────
+   :root      → 浅色模式（默认）
+   .dark      → 深色模式（next-themes 在 <html> 上挂载 .dark class）
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* ── 浅色模式（默认） ── */
+:root {
+  /* shadcn/ui 变量 */
+  --background:    0 0% 100%;          /* #FFFFFF */
+  --foreground:    240 10% 4%;         /* #09090B */
+
+  --card:          240 4.8% 95.9%;     /* #F4F4F5 */
+  --card-foreground: 240 10% 4%;
+
+  --popover:       0 0% 100%;
+  --popover-foreground: 240 10% 4%;
+
+  --primary:       239 84% 67%;        /* #6366F1 */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary:     240 4.8% 95.9%;
+  --secondary-foreground: 240 5.9% 10%;
+
+  --muted:         240 4.8% 95.9%;
+  --muted-foreground: 240 3.8% 46.1%;  /* #71717A */
+
+  --accent:        239 84% 67%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive:   0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border:        240 5.9% 90%;       /* #E4E4E7 */
+  --input:         240 5.9% 90%;
+  --ring:          239 84% 67%;
+
+  --radius: 0.75rem;
+
+  /* PT Manager 自定义 token — 浅色 */
+  --pt-bg-base:       0 0% 100%;
+  --pt-bg-card:       240 4.8% 95.9%;
+  --pt-bg-elevated:   240 5% 92%;
+  --pt-bg-overlay:    240 5.9% 90%;
+  --pt-border:        240 5.9% 90%;
+  --pt-border-subtle: 240 3.7% 83.9%;
+  --pt-fg:            240 10% 4%;
+  --pt-fg-muted:      240 3.8% 46.1%;
+  --pt-fg-subtle:     240 5% 64.9%;
+}
+
+/* ── 深色模式 ── */
+.dark {
+  /* shadcn/ui 变量 */
+  --background:    240 10% 4%;         /* #09090B */
+  --foreground:    0 0% 98%;           /* #FAFAFA */
+
+  --card:          240 5% 11%;         /* #18181B */
+  --card-foreground: 0 0% 98%;
+
+  --popover:       240 5% 11%;
+  --popover-foreground: 0 0% 98%;
+
+  --primary:       239 84% 67%;        /* #6366F1 */
+  --primary-foreground: 0 0% 100%;
+
+  --secondary:     240 4% 16%;         /* #27272A */
+  --secondary-foreground: 0 0% 98%;
+
+  --muted:         240 4% 16%;
+  --muted-foreground: 240 5% 65%;      /* #A1A1AA */
+
+  --accent:        239 84% 67%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive:   0 63% 31%;
+  --destructive-foreground: 0 0% 98%;
+
+  --border:        240 4% 16%;         /* #27272A */
+  --input:         240 4% 16%;
+  --ring:          239 84% 67%;
+
+  /* PT Manager 自定义 token — 深色 */
+  --pt-bg-base:       240 10% 4%;
+  --pt-bg-card:       240 5% 11%;
+  --pt-bg-elevated:   240 6% 12%;
+  --pt-bg-overlay:    240 4% 16%;
+  --pt-border:        240 4% 16%;
+  --pt-border-subtle: 240 5% 26%;
+  --pt-fg:            0 0% 98%;
+  --pt-fg-muted:      240 5% 65%;
+  --pt-fg-subtle:     240 4% 46%;
+}
+
+/* ─── 全局基础样式 ─────────────────────────────────────────────────────────── */
+* {
+  border-color: theme('colors.border.DEFAULT');
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* iOS 横向回弹会露出底色，禁掉更像原生 App */
+  overscroll-behavior-y: none;
+}
+
+/* 移动端点击高亮块很丑，交互反馈交给 :active / hover 样式 */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── 滚动条样式 ──────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--pt-border-subtle));
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--pt-bg-overlay)); }
+
+/* ─── Bento Grid 公共样式 ─────────────────────────────────────────────────── */
+@layer components {
+  .bento-card {
+    @apply rounded-xl border border-border bg-bg-card p-4
+           transition-all duration-200;
+  }
+
+  /* 轻度玻璃拟态 — 仅用于特定卡片，不大面积使用 */
+  .bento-glass {
+    @apply rounded-xl border border-white/5
+           bg-white/[0.03] backdrop-blur-sm p-4;
+  }
+
+  /* 数值变化 badge */
+  .growth-badge-up {
+    @apply inline-flex items-center gap-1 rounded-full
+           bg-success/10 px-2 py-0.5 text-xs font-medium text-success;
+  }
+  .growth-badge-down {
+    @apply inline-flex items-center gap-1 rounded-full
+           bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger;
+  }
+  .growth-badge-neutral {
+    @apply inline-flex items-center gap-1 rounded-full
+           bg-fg-muted/10 px-2 py-0.5 text-xs font-medium text-fg-muted;
+  }
+
+  /* ─── 触控友好的控件 ───────────────────────────────────────────────────
+     移动端一律 ≥40px 命中区，sm 断点以上收回到桌面紧凑尺寸。
+     ────────────────────────────────────────────────────────────────── */
+
+  /* 方形图标按钮（顶栏、行内操作） */
+  .icon-btn {
+    @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-lg
+           text-fg-subtle transition-colors
+           hover:bg-bg-elevated hover:text-fg active:bg-bg-overlay
+           disabled:cursor-not-allowed disabled:opacity-50
+           sm:h-8 sm:w-8;
+  }
+
+  /* 工具栏次级按钮（带边框） */
+  .btn-toolbar {
+    @apply inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1.5
+           rounded-lg border border-border bg-bg-card px-3 text-xs text-fg-muted
+           transition-colors hover:bg-bg-elevated hover:text-fg
+           disabled:cursor-not-allowed disabled:opacity-50
+           sm:min-h-[32px];
+  }
+
+  /* 主操作按钮 */
+  .btn-accent {
+    @apply inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1.5
+           rounded-lg bg-accent px-3 text-xs font-medium text-white
+           transition-colors hover:bg-accent-hover
+           disabled:cursor-not-allowed disabled:opacity-50
+           sm:min-h-[32px];
+  }
+
+  /* 危险操作按钮 */
+  .btn-danger {
+    @apply inline-flex min-h-[40px] shrink-0 items-center justify-center gap-1.5
+           rounded-lg bg-danger/90 px-3 text-xs font-medium text-white
+           transition-colors hover:bg-danger
+           disabled:cursor-not-allowed disabled:opacity-50
+           sm:min-h-[32px];
+  }
+
+  /* 分段控制 / 筛选 chip —— 放在 .seg-bar 里横向滚动 */
+  .seg-bar {
+    @apply flex shrink-0 items-center gap-1 overflow-x-auto rounded-lg border
+           border-border bg-bg-card p-0.5 scrollbar-none;
+  }
+  .seg-btn {
+    @apply inline-flex min-h-[36px] shrink-0 items-center justify-center gap-0.5
+           whitespace-nowrap rounded-md px-2.5 text-xs transition-colors;
+  }
+  .seg-btn-active {
+    @apply bg-accent text-white;
+  }
+  .seg-btn-idle {
+    @apply text-fg-muted hover:bg-bg-elevated hover:text-fg;
+  }
+
+  /* 表单控件：移动端 16px 起，避免 iOS Safari 聚焦时自动放大页面 */
+  .field {
+    @apply w-full rounded-lg border border-border bg-bg-card px-3 py-2.5
+           text-base text-fg outline-none transition-colors
+           placeholder:text-fg-subtle
+           focus:border-accent focus:ring-1 focus:ring-accent
+           disabled:cursor-not-allowed disabled:opacity-50
+           sm:py-1.5 sm:text-sm;
+  }
+
+  /* ─── 移动端数据卡片（替代窄屏上的表格行） ────────────────────────── */
+  .data-card {
+    @apply rounded-xl border border-border bg-bg-card p-3.5
+           transition-colors active:bg-bg-elevated;
+  }
+  /* 卡片内的指标格：标签在上，数值在下 */
+  .metric {
+    @apply min-w-0 rounded-lg bg-bg-elevated/50 px-2.5 py-2;
+  }
+  .metric-label {
+    @apply truncate text-[10px] uppercase tracking-wide text-fg-subtle;
+  }
+  .metric-value {
+    @apply mt-0.5 truncate text-sm font-semibold tabular-nums text-fg;
+  }
+
+  /* 页面标题区：移动端竖排，sm 起并排 */
+  .page-header {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between;
+  }
+
+  /* 外壳高度：dvh 让手机地址栏收放时不裁掉底部，vh 兜底老浏览器 */
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* 主滚动区。左右内边距用 max() 把安全区并进来 —— 不能写成
+     `px-4 safe-x` 两个类，因为 .safe-x 在层叠里更靠后，会把 px-4 覆盖成
+     env()，而绝大多数手机竖屏下 env(safe-area-inset-left) = 0，页面就没内边距了。 */
+  .main-scroll {
+    @apply flex-1 overflow-y-auto py-4 sm:py-6;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  @media (min-width: 640px) {
+    .main-scroll {
+      padding-left: max(1.5rem, env(safe-area-inset-left));
+      padding-right: max(1.5rem, env(safe-area-inset-right));
+    }
+  }
+}
+
+/* ─── 工具类 ───────────────────────────────────────────────────────────── */
+@layer utilities {
+  /* 隐藏滚动条但保留滚动能力（横向 chip 条用） */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 手势条避让。只用在自身没有 padding-bottom 工具类的元素上，
+     否则会互相覆盖（同理不要再加一个 padding 型的 .safe-x）。 */
+  .safe-b {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* 长 hash / URL / 种子名的换行兜底 */
+  .break-anywhere {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}

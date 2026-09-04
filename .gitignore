@@ -1,3 +1,6 @@
 .env
 *.exe
 ptmanager
+internal/web/frontend/*
+!internal/web/frontend/.gitkeep
+node_modules/
