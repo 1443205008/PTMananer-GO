@@ -21,7 +21,10 @@ export function useStartFakeSeed() {
     mutationFn: ({ accountId, torrentId, torrentName }: {
       accountId: string; torrentId: string; torrentName: string;
     }) => startFakeSeed(accountId, torrentId, torrentName),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: KEY });
+      void qc.invalidateQueries({ queryKey: ['search-torrents'] });
+    },
   });
 }
 

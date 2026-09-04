@@ -109,10 +109,15 @@ func (s *Service) SearchTorrents(keyword string, page, pageSize int, mode, disco
 		return SearchResponse{}, toSearchErr(err)
 	}
 
-	// 标记已在做种的种子
+	// 标记已在做种 / 保种中的种子：
+	// TrackerTorrent.SEEDING = 同步过来的真实做种；FakeSeedJob.RUNNING = 本地保种任务。
+	// 搜索页「保种」按钮依赖 isSeeding，只查 TrackerTorrent 会漏掉保种任务。
 	seeding := map[string]bool{}
 	rows, err := s.pool.Query(`
-		SELECT siteTorrentId FROM TrackerTorrent WHERE accountId=? AND status='SEEDING'`, accountID)
+		SELECT siteTorrentId FROM TrackerTorrent WHERE accountId=? AND status='SEEDING'
+		UNION
+		SELECT torrentId FROM FakeSeedJob WHERE accountId=? AND status='RUNNING'`,
+		accountID, accountID)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {

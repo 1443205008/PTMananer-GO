@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Search, Download, Users, Upload, Loader2, AlertTriangle, Zap, ArrowUpDown, ArrowUp, ArrowDown, Sprout, ChevronDown, Check, ListFilter } from 'lucide-react';
 import { useSearchTorrents, useGenDlToken, useTeamList } from '@/hooks/use-search';
-import { useStartFakeSeed } from '@/hooks/use-fake-seed';
+import { useStartFakeSeed, useFakeSeedJobs } from '@/hooks/use-fake-seed';
 import { useAccounts } from '@/hooks/use-accounts';
 import { useSettings } from '@/hooks/use-settings';
 import { useLocalStorage } from '@/hooks/use-local-storage';
@@ -77,6 +77,12 @@ export default function SearchPage() {
   const defaultAccountId = accounts?.find(
     (account) => account.isEnabled && account.status === 'ACTIVE',
   )?.id ?? '';
+  const { data: fakeSeedJobs } = useFakeSeedJobs(defaultAccountId || undefined);
+  const fakeSeedingIds = new Set(
+    (fakeSeedJobs ?? [])
+      .filter((j) => j.status === 'RUNNING')
+      .map((j) => j.torrentId),
+  );
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -188,7 +194,14 @@ export default function SearchPage() {
       ) : (
         <>
           <div className="space-y-2">
-            {data.data.map((t) => <TorrentRow key={t.id} torrent={t} accountId={defaultAccountId} />)}
+            {data.data.map((t) => (
+              <TorrentRow
+                key={t.id}
+                torrent={t}
+                accountId={defaultAccountId}
+                isFakeSeeding={fakeSeedingIds.has(t.id)}
+              />
+            ))}
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-2">
@@ -315,7 +328,9 @@ function TeamMultiSelect({
 
 // ── 子组件 ─────────────────────────────────────────────────────────────────────
 
-function TorrentRow({ torrent, accountId }: { torrent: TorrentSearchItem; accountId: string }) {
+function TorrentRow({ torrent, accountId, isFakeSeeding }: {
+  torrent: TorrentSearchItem; accountId: string; isFakeSeeding: boolean;
+}) {
   const dlMutation = useGenDlToken();
   const seedMutation = useStartFakeSeed();
   const discountCfg = torrent.discount ? DISCOUNT_LABELS[torrent.discount] : null;
@@ -332,7 +347,7 @@ function TorrentRow({ torrent, accountId }: { torrent: TorrentSearchItem; accoun
     await seedMutation.mutateAsync({ accountId, torrentId: torrent.id, torrentName: torrent.name });
   }
 
-  const seedDone = seedMutation.isSuccess || torrent.isSeeding;
+  const seedDone = seedMutation.isSuccess || torrent.isSeeding || isFakeSeeding;
   const seedError = seedMutation.error as Error | null;
 
   return (
@@ -373,7 +388,7 @@ function TorrentRow({ torrent, accountId }: { torrent: TorrentSearchItem; accoun
         {/* 保种按钮 */}
         <button onClick={() => void handleSeed()}
           disabled={seedMutation.isPending || seedDone || !accountId}
-          title={torrent.isSeeding ? '该账号正在做种' : seedMutation.isSuccess ? '保种任务已创建' : '开始保种'}
+          title={isFakeSeeding || torrent.isSeeding ? '该种子已在保种中' : seedMutation.isSuccess ? '保种任务已创建' : '开始保种'}
           className={cn(
             'btn-toolbar flex-1 sm:flex-none',
             seedDone
@@ -383,7 +398,7 @@ function TorrentRow({ torrent, accountId }: { torrent: TorrentSearchItem; accoun
           {seedMutation.isPending
             ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
             : <Sprout className="h-3.5 w-3.5" />}
-          {torrent.isSeeding ? '做种中' : seedMutation.isSuccess ? '已保种' : '保种'}
+          {isFakeSeeding || torrent.isSeeding ? '保种中' : seedMutation.isSuccess ? '已保种' : '保种'}
         </button>
         {/* 下载按钮 */}
         <button onClick={() => void handleDownload()} disabled={dlMutation.isPending}
