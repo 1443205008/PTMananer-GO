@@ -180,10 +180,9 @@ func (s *Service) StartByTorrentID(accountID, torrentID, torrentName string) (Fa
 	}
 
 	jobID := db.NewID()
-	_, err = s.pool.Exec(`
-		INSERT INTO FakeSeedJob(id,accountId,torrentId,torrentName,infoHash,trackerUrl,
-			totalSize,peerId,peerKey,port,status,interval,createdAt,updatedAt)
-		VALUES(?,?,?,?,?,?,?,?,?,34567,'STOPPED',300,NOW(),NOW())`,
+	_, err = s.pool.Exec("INSERT INTO FakeSeedJob(id,accountId,torrentId,torrentName,infoHash,trackerUrl,"+
+		"totalSize,peerId,peerKey,port,status,`interval`,createdAt,updatedAt) "+
+		"VALUES(?,?,?,?,?,?,?,?,?,34567,'STOPPED',300,NOW(3),NOW(3))",
 		jobID, accountID, torrentID, torrentName, parsed.infoHash, parsed.trackerURL,
 		parsed.totalSize, genPeerID(), genKey())
 	if err != nil {
@@ -486,7 +485,7 @@ func (s *Service) sendAnnounce(job *jobRow, event string) error {
 	}
 
 	if newInterval, ok := parseTrackerInterval(body); ok {
-		if _, err := s.pool.Exec(`UPDATE FakeSeedJob SET interval=?, updatedAt=NOW() WHERE id=?`, newInterval, job.id); err == nil {
+		if _, err := s.pool.Exec("UPDATE FakeSeedJob SET `interval`=?, updatedAt=NOW(3) WHERE id=?", newInterval, job.id); err == nil {
 			s.mu.Lock()
 			if sess, ok := s.sessions[job.id]; ok && sess.interval != newInterval {
 				sess.interval = newInterval
